@@ -47,8 +47,8 @@ defmodule Truestamp.Merkle.Tree do
   end
 
   defp empty do
-    root = Hash.empty_root()
-    %Merkle{root_hash: root, leaves: [], tree_depth: 0, tree_levels: [{root}], leaf_index: %{}}
+    [{root}] = levels = levels([])
+    %Merkle{root_hash: root, leaves: [], tree_depth: 0, tree_levels: levels, leaf_index: %{}}
   end
 
   # `pairs` are the entries in leaf order as {key, digest_hex}, and `leaf_hashes` their
@@ -56,7 +56,7 @@ defmodule Truestamp.Merkle.Tree do
   # generation reaches any sibling with elem/2.
   defp assemble(pairs, leaf_hashes, index) do
     depth = depth!(length(leaf_hashes))
-    levels = build_levels(leaf_hashes, [])
+    levels = levels(leaf_hashes)
 
     %Merkle{
       root_hash: levels |> List.last() |> elem(0),
@@ -66,6 +66,12 @@ defmodule Truestamp.Merkle.Tree do
       leaf_index: index
     }
   end
+
+  # The levels over leaf hashes already in leaf order, bottom first, each a tuple; the last
+  # holds the root. Every tree is built here, and the interop tests call it with other
+  # implementations' leaf hashes, which need not be hashes of 32-byte digests.
+  def levels([]), do: [{Hash.empty_root()}]
+  def levels([_ | _] = leaf_hashes), do: build_levels(leaf_hashes, [])
 
   defp build_levels([_root] = level, built), do: Enum.reverse([List.to_tuple(level) | built])
 

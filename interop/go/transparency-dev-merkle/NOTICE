@@ -1,0 +1,71 @@
+Copyright (c) 2025-2026 Truestamp, Inc.
+SPDX-License-Identifier: Apache-2.0
+
+transparency-dev/merkle interop check for truestamp_merkle
+
+This directory (interop/go/transparency-dev-merkle/ in the truestamp_merkle
+repository) contains material copied from the upstream projects below. Each
+is licensed under the Apache License, Version 2.0. Each license text is
+vendored here byte for byte from the module named, as the LICENSE-* file
+given. None of these projects ships a NOTICE file at the versions used.
+
+1. github.com/transparency-dev/merkle
+   Versions: v0.0.2 (tag), and v0.0.3-0.20260921095310-fbbcd741c3d1 (main
+   branch, commit fbbcd741c3d1, untagged)
+   License:  Apache-2.0 (Copyright Google LLC)
+   Vendored: LICENSE-transparency-dev-merkle (from v0.0.2; the main-branch
+             LICENSE is byte-identical and is also kept as
+             testdata/upstream-main-inclusion/LICENSE)
+   Material here:
+     upstream_tdm.go   v0.0.2 literals and test logic from
+                       testonly/constants.go, rfc6962/rfc6962_test.go,
+                       proof/verify_test.go, testonly/reference_test.go,
+                       compact/range_test.go, proof/proof_test.go and
+                       testonly/tree_test.go
+     upstream_main.go  main testonly/vectors_test.go (the two subtree
+                       vector digests and their loops) and testonly/tree.go
+                       (isSubtreeValid, bitCeil)
+     ours.go           v0.0.2 proof/verify.go:59 and :67 (the error-message
+                       prefixes "index is beyond size" and "wrong proof
+                       size", quoted to match the implementation's refusals)
+     check.go          main proof/verify_test.go:30-39 (the inclusionProbe
+                       JSON shape, as mainProbe), and v0.0.2
+                       proof/proof_test.go:114-129 (the TestInclusion
+                       assertions and their failure text "accepted bad
+                       params")
+     testdata/upstream-main-inclusion/**/*.json
+                       98 data files copied byte for byte from main
+                       testdata/inclusion/ (see
+                       testdata/upstream-main-inclusion/SOURCE.txt); they
+                       are embedded into the program
+
+2. github.com/google/trillian
+   Version:  v1.0.1
+   License:  Apache-2.0 (Copyright Google Inc.)
+   Vendored: LICENSE-trillian
+   Material here:
+     upstream_lineage.go  merkle/log_verifier_test.go (the verifierCheck
+                          element-replacement corruption and the
+                          TestVerifyInclusionProof invalid-path probes)
+
+3. github.com/google/certificate-transparency
+   Version:  v0.0.0-20230802103341-0fe5116f4289 (master, commit
+             0fe5116f4289)
+   License:  Apache-2.0 (the files used carry no per-file copyright line)
+   Vendored: LICENSE-certificate-transparency
+   Material here:
+     upstream_lineage.go  cpp/merkletree/tree_hasher_test.cc,
+                          cpp/merkletree/merkle_tree_test.cc and
+                          python/ct/crypto/merkle_test.py literals
+     build.go             python/ct/crypto/merkle_test.py:398-497 test
+                          logic (rightmost-node proofs and
+                          proofs_per_tree_size), transcribed
+
+The fixture file this program checks (vectors/interop/transparency-dev-merkle.json
+in the truestamp_merkle repository) holds values taken from, or derived from,
+the same upstream material.
+
+Linked at build time, not copied: github.com/transparency-dev/merkle v0.0.2
+(the implementation under test) and github.com/google/trillian v1.4.2
+(merkle/logverifier and merkle/rfc6962, a second verifier), both Apache-2.0,
+with the dependencies listed in go.sum.

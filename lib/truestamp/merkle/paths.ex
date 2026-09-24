@@ -108,10 +108,18 @@ defmodule Truestamp.Merkle.Paths do
   end
 
   defp root_from_proof(leaf_hex, proof, max_steps) do
-    with :ok <- check_leaf(leaf_hex),
-         {:ok, _length} <- check_proof(proof, max_steps),
+    with :ok <- check_leaf(leaf_hex) do
+      walk_leaf_hash(Hash.leaf(leaf_hex), proof, max_steps)
+    end
+  end
+
+  # Section 2.1.3.2 from a 32-byte leaf hash, whatever data it was taken over. walk/3 and
+  # verify/4 come through here once the digest is checked, and the interop tests call it
+  # with other implementations' leaf hashes. Returns the root's raw bytes.
+  def walk_leaf_hash(<<_::binary-size(32)>> = leaf_hash, proof, max_steps) do
+    with {:ok, _length} <- check_proof(proof, max_steps),
          {:ok, siblings} <- parse_path(proof.path, []) do
-      root(proof.leaf_index, proof.tree_size - 1, Hash.leaf(leaf_hex), siblings)
+      root(proof.leaf_index, proof.tree_size - 1, leaf_hash, siblings)
     end
   end
 

@@ -5,7 +5,10 @@ defmodule Truestamp.LicenseHeaderTest do
   # Every source and document file opens with the copyright line and the SPDX
   # identifier, in its own comment syntax, after a shebang if it has one. Data
   # and machine-managed files (LICENSE, mix.lock, .gitignore, .tool-versions,
-  # vectors/merkle.json) carry none.
+  # vectors/merkle.json, vectors/interop/*.json, go.mod, go.sum, the interop programs'
+  # NOTICE and LICENSE-* files) carry none, and neither do upstream files kept byte for
+  # byte under a testdata/ directory. A Go or assembly file holding another project's
+  # material names that project's license after Apache-2.0 in its SPDX expression.
   use ExUnit.Case, async: true
 
   @root Path.expand("..", __DIR__)
@@ -17,6 +20,8 @@ defmodule Truestamp.LicenseHeaderTest do
     ".formatter.exs",
     "*.md",
     "{lib,test,bench,examples,vectors}/**/*.{ex,exs}",
+    "{vectors,interop}/**/*.md",
+    "interop/**/*.{go,s}",
     ".github/**/*.{yml,yaml}"
   ]
 
@@ -24,6 +29,7 @@ defmodule Truestamp.LicenseHeaderTest do
     files =
       @patterns
       |> Enum.flat_map(&Path.wildcard(Path.join(@root, &1), match_dot: true))
+      |> Enum.reject(&(&1 |> Path.relative_to(@root) |> Path.split() |> Enum.member?("testdata")))
       |> Enum.uniq()
 
     assert files != []
@@ -43,9 +49,17 @@ defmodule Truestamp.LicenseHeaderTest do
       |> Enum.take(4)
 
     case lines do
-      ["# " <> @copyright, "# " <> @spdx | _] -> true
-      ["<!--", @copyright, @spdx, "-->"] -> true
-      _ -> false
+      ["# " <> @copyright, "# " <> @spdx | _] ->
+        true
+
+      ["<!--", @copyright, @spdx, "-->"] ->
+        true
+
+      ["// " <> @copyright, "// " <> @spdx <> rest | _] ->
+        rest =~ ~r/\A( AND [A-Za-z0-9.+-]+)*\z/
+
+      _ ->
+        false
     end
   end
 end

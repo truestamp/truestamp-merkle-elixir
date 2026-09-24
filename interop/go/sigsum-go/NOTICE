@@ -1,0 +1,36 @@
+sigsum-go interop check
+Copyright (c) 2025-2026 Truestamp, Inc.
+Licensed under the Apache License, Version 2.0.
+
+This directory contains material from one upstream project.
+
+sigsum.org/sigsum-go
+  Module:   sigsum.org/sigsum-go
+  Version:  v0.14.1 (git tag v0.14.1, commit ea106fe53c454bc5b8ece2ba56afc43d0f1f09dc)
+  License:  BSD-2-Clause, Copyright (c) 2021, The Sigsum Project Authors
+  License text: LICENSE-sigsum-go, a byte-for-byte copy of the upstream LICENSE
+
+  Upstream files the material comes from:
+    pkg/proof/proof_test.go       lines 18-38, 66-111, 133-151, 164-184, 202-207
+    pkg/merkle/tree_test.go       lines 63-86, 90-117, 121-158, 257-262,
+                                  355-360, 362-370
+    pkg/types/tree_head_test.go   lines 152-159, 450-455
+    tests/sigsum-submit-test      lines 31-38, quoted in a comment
+    doc/tools.md                  lines 268-269, 424-425, 430-440, 446-449, 454-465
+    pkg/merkle/verify.go          two error message fragments, lines 104 and 108
+
+  Files here that contain it:
+    upstream.go   the lines above; each block names its file and line range
+                  and is marked "verbatim"
+    main.go       short upstream expressions and line references quoted in
+                  fixture entry names
+    text.go       short upstream fragments quoted in the fixture's prose
+
+  Vendored upstream data files: none.
+
+  The fixture file this program writes with -write (vectors/interop/sigsum-go.json
+  in the truestamp_merkle repository) holds values copied from this material or
+  computed from it.
+
+The program is also built against sigsum.org/sigsum-go v0.14.1 as a Go module
+dependency. The go command fetches that module; it is not included here.

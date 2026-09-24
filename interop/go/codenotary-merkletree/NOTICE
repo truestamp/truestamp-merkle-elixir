@@ -1,0 +1,71 @@
+codenotary-merkletree interop check for truestamp_merkle
+Copyright (c) 2025-2026 Truestamp, Inc.
+Licensed under the Apache License, Version 2.0 (SPDX: Apache-2.0).
+
+This directory contains material from the following third-party software.
+
+
+github.com/codenotary/merkletree
+--------------------------------
+
+Module:   github.com/codenotary/merkletree
+Version:  v0.1.2 (module zip h1:Bvey7BIjf3ZRgt3nAFL7XiBvBs/u/1P1WJDLdsplKRE=,
+          pinned in go.sum)
+License:  Apache-2.0, Copyright 2019-2020 vChain, Inc.
+          Full text: LICENSE-codenotary-merkletree (the module's LICENSE file,
+          byte for byte). The module ships no NOTICE file.
+
+Files here that contain its material:
+
+  upstream_data.go    data_test.go lines 23-214 verbatim (testRoots, testPaths)
+  upstream_tests.go   verbatim test functions: mth_test.go:28-38 and 39-62,
+                      tree_test.go:46-61, 62-70, 87-119 and 120-147,
+                      example_test.go:43-71 and 72-109
+  shims.go            the exported names and signatures of mth.go, tree.go and
+                      store.go, and the Path type of tree.go, repeated so that
+                      the copied tests compile against the real module
+  text.go             prose that quotes short code fragments of mth.go and
+                      tree.go and cites the module's files by line
+  main.go             case names and comments that quote short code
+                      fragments of tree.go, mth_test.go, tree_test.go and
+                      example_test.go and cite those files by line
+  ours.go             comments that quote a short code fragment of tree.go
+                      (line 214) and cite tree.go by line
+  upstream.go         the two declaration lines of data_test.go (lines 23
+                      and 91) that it compares, and the upstream test names
+
+Vendored upstream files, byte-for-byte copies of the module's files (the .txt
+suffix only keeps the Go tool from compiling them):
+
+  testdata/data_test.go.txt       <- data_test.go
+  testdata/tree_test.go.txt       <- tree_test.go
+  testdata/mth_test.go.txt        <- mth_test.go
+  testdata/example_test.go.txt    <- example_test.go
+  LICENSE-codenotary-merkletree   <- LICENSE
+
+The program embeds these five files, pins each by SHA-256 (upstream.go), and
+checks every verbatim block of upstream_data.go and upstream_tests.go against
+them line for line on every run. To re-check the copies against the module
+cache:
+
+  M=$(go env GOMODCACHE)/github.com/codenotary/merkletree@v0.1.2
+  for f in data_test.go tree_test.go mth_test.go example_test.go; do
+    cmp "$M/$f" "testdata/$f.txt"
+  done
+  cmp "$M/LICENSE" LICENSE-codenotary-merkletree
+
+The fixture this program checks (vectors/interop/codenotary-merkletree.json in
+the truestamp_merkle repository) also holds hash values taken from
+data_test.go (testRoots and testPaths), and prose (written by text.go and
+main.go) that quotes short code fragments of the module, under the same
+license.
+
+
+Not included
+------------
+
+github.com/stretchr/testify (MIT), which the module's own tests import, is not
+copied or vendored. internal/assert is original code that provides only the
+five assertion functions the copied tests call (True, False, Equal, Len, Nil);
+internal/testing and internal/quietfmt are original stand-ins for the standard
+library's testing and fmt packages.

@@ -1,0 +1,6 @@
+Copied verbatim from github.com/transparency-dev/merkle at commit fbbcd741c3d1
+(Go pseudo-version v0.0.3-0.20260921095310-fbbcd741c3d1, main branch, untagged),
+directory testdata/inclusion/. License: Apache-2.0 (the upstream LICENSE is copied
+alongside as LICENSE).
+Used only as an independent cross-check of the corrupted-proof cases materialized
+from proof/verify_test.go at the v0.0.2 tag.

@@ -1,0 +1,56 @@
+cometbft-crypto-merkle interop check
+Copyright (c) 2025-2026 Truestamp, Inc.
+Licensed under the Apache License, Version 2.0 (SPDX: Apache-2.0).
+
+This directory, interop/go/cometbft-crypto-merkle/ in the truestamp_merkle
+repository, is a Go program that confirms the fixture file
+vectors/interop/cometbft-crypto-merkle.json against
+github.com/cometbft/cometbft/crypto/merkle, and can check the library's own
+vectors/merkle.json with the same implementation. It contains third-party
+material from the upstream module listed below.
+
+Upstream: github.com/cometbft/cometbft
+Version:  v1.0.1
+License:  Apache-2.0. The license text is LICENSE-cometbft, a byte-for-byte
+          copy of LICENSE at the root of github.com/cometbft/cometbft@v1.0.1.
+          The module ships no NOTICE file, and its LICENSE names no copyright
+          holder.
+Material in this directory:
+  upstream.go        test literals and test helpers copied from
+                     crypto/merkle/rfc6962_test.go, crypto/merkle/tree_test.go,
+                     crypto/merkle/proof_test.go, crypto/merkle/proof.go,
+                     crypto/merkle/types.go, libs/test/mutate.go,
+                     abci/types/types_test.go, types/block_test.go,
+                     types/encoding_helper.go, types/utils.go,
+                     types/validator_set_test.go,
+                     types/consensus_breakage_test.go and types/tx_test.go
+  upstream_extra.go  test literals and test bodies copied from
+                     internal/blocksync/msgs_test.go, types/part_set_test.go,
+                     types/results_test.go, state/store_test.go and
+                     types/tx_test.go
+  impl.go            code adapted from crypto/merkle/proof.go:79-114
+                     (Proof.Verify) and crypto/merkle/tree.go:15-27
+                     (hashFromByteSlices)
+  main.go            assertion and corruption logic adapted from the upstream
+                     tests named above, cited by file and line where used,
+                     and the refusal texts of crypto/merkle/proof.go:215 and
+                     220, quoted in a fixture note
+  ours.go            the refusal texts of crypto/merkle/proof.go:208, 215 and
+                     220, matched to tell which check refused a case
+  The fixture file this program writes and confirms
+  (vectors/interop/cometbft-crypto-merkle.json) holds values taken from those
+  test literals or produced by the upstream module's own functions.
+Additional notice: crypto/merkle/rfc6962_test.go, whose TestRFC6962Hasher
+literals upstream.go copies, carries the notice
+  Copyright 2016 Google Inc. All Rights Reserved.
+and states that its tests were taken from github.com/google/trillian
+(merkle/rfc6962/rfc6962_test.go) under the Apache License, Version 2.0.
+
+Vendored files, kept byte for byte:
+  LICENSE-cometbft   LICENSE of github.com/cometbft/cometbft@v1.0.1
+
+Not third-party material: rfc9162.go, linkname.s, README.md, go.mod and
+go.sum are Truestamp's own work, and so is ours.go apart from the quoted
+texts listed above. The other modules listed in go.mod are
+build dependencies fetched by the Go toolchain; no material from them is
+copied here.

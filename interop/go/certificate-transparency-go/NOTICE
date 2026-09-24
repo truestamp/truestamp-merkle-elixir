@@ -1,0 +1,42 @@
+certificate-transparency-go interop check for truestamp_merkle
+Copyright (c) 2025-2026 Truestamp, Inc.
+Licensed under the Apache License, Version 2.0.
+
+This directory contains material from one upstream module.
+
+github.com/google/certificate-transparency-go
+  Version:    v1.0.16
+  License:    Apache-2.0 (copy in LICENSE-certificate-transparency-go)
+  Copyright:  Copyright 2014, 2015 and 2016 Google Inc. All Rights Reserved.
+  NOTICE:     the module ships no NOTICE file.
+
+  Files here that contain its material:
+    upstream_vectors.go
+      Code copied byte for byte, between BEGIN and END markers, from
+      merkletree/tree_hasher_test.go lines 24-69,
+      merkletree/merkle_verifier_test.go lines 30-119, 219-319, 322-349
+      and 353-401, and serialization_test.go line 383. The lines outside
+      the markers are Truestamp's.
+    main.go
+      Short literals: the t.Fatal labels of
+      merkletree/merkle_verifier_test.go lines 356-379, upstream file names
+      and line numbers cited in the fixture text, and a restatement of the
+      scanner/scanner_test_data.go lines 360-400 procedure (makeParent,
+      CalcRootHash) that explains a fixture deviation.
+    ours.go
+      Short literals: the error texts of merkletree/merkle_verifier.go
+      lines 86, 89, 99 and 114, which the -ours check matches.
+
+  Vendored upstream files, byte for byte from the v1.0.16 module zip,
+  unmodified, with their SHA-256 values pinned in main.go:
+    testdata/certificate-transparency-go@v1.0.16/LICENSE
+    testdata/certificate-transparency-go@v1.0.16/merkletree/merkle_verifier_test.go
+    testdata/certificate-transparency-go@v1.0.16/merkletree/tree_hasher_test.go
+    testdata/certificate-transparency-go@v1.0.16/serialization_test.go
+    testdata/certificate-transparency-go@v1.0.16/testdata/test-cert.pem
+    testdata/certificate-transparency-go@v1.0.16/testdata/test-cert.proof
+
+go.mod and go.sum name further modules (github.com/golang/protobuf,
+golang.org/x/crypto, golang.org/x/net, google.golang.org/protobuf) that the
+Go toolchain downloads and links when it builds the program. None of their
+material is in this directory.

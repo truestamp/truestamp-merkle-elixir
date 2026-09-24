@@ -1,0 +1,47 @@
+x-mod-sumdb-tlog interop check for truestamp_merkle
+Copyright (c) 2025-2026 Truestamp, Inc.
+
+This directory (interop/go/x-mod-sumdb-tlog/ in the truestamp_merkle
+repository) is licensed under Apache-2.0, except for the upstream material
+listed below, which stays under its own license.
+
+Upstream: golang.org/x/mod
+  Version:  v0.41.0 (pinned by go.mod and go.sum)
+  License:  BSD-3-Clause, Copyright 2009 The Go Authors.
+            The license text is vendored byte for byte as LICENSE-golang-x-mod,
+            identical to LICENSE at the root of golang.org/x/mod@v0.41.0.
+  Material: literals, test data and short error texts copied from, or quoted
+            from, sumdb/tlog/tlog.go, sumdb/tlog/tlog_test.go,
+            sumdb/tlog/note.go, sumdb/tlog/note_test.go, sumdb/tlog/ct_test.go,
+            sumdb/tlog/tile.go, sumdb/client.go and sumdb/client_test.go.
+            Every copied value carries a file:line comment in the source.
+  Files here that contain it:
+    upstream.go    record texts, base64 hashes, the emptyHash bytes, the
+                   TestTree leaf format, the tile height and the
+                   TestRejectUnauthenticatedLines record
+                   (tlog.go, tlog_test.go, note_test.go, client_test.go)
+    sources.go     hashes, texts and short error texts quoted in the
+                   fixture's sources and notes, such as "tlog: invalid inputs"
+                   and "corrupt proof hash #k" (tlog.go, tlog_test.go, note.go,
+                   note_test.go, ct_test.go, client_test.go)
+    main.go        record texts, hashes and test names quoted in fixture
+                   entry names, the TestTree leaf format "leaf %d" and the
+                   failure text "corrupt proof hash #%d" (tlog_test.go,
+                   note_test.go, client_test.go)
+    edges.go       the TestTree leaf format "leaf %d" in case names
+                   (tlog_test.go)
+    clientpath.go  sumdb client error texts, and the call sequence of the
+                   sumdb client and of the test log's addRecord (client.go,
+                   client_test.go, tile.go)
+    LICENSE-golang-x-mod   the upstream license text itself
+  The fixture file this program writes and checks (vectors/interop/
+  x-mod-sumdb-tlog.json in the truestamp_merkle repository) holds the same
+  record texts and hashes.
+  No golang.org/x/mod source code is copied or vendored here: the program
+  imports golang.org/x/mod/sumdb/tlog as a module dependency. The upstream
+  module also ships a PATENTS grant for the Go project; it is not reproduced
+  here because none of the upstream implementation is.
+
+Files here with no upstream material (Apache-2.0 only): reference.go, ours.go,
+go.mod, go.sum, README.md. ours.go takes tlog's error texts from tlog at run
+time instead of quoting them.

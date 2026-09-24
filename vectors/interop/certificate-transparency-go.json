@@ -1,0 +1,1910 @@
+{
+  "implementation": "github.com/google/certificate-transparency-go",
+  "version": "v1.0.16",
+  "license": "Apache-2.0",
+  "sources": [
+    "types.go:59-60 TreeLeafPrefix = 0x00, TreeNodePrefix = 0x01",
+    "merkletree/tree_hasher.go:34-47 HashEmpty (SHA-256 of the empty string), HashLeaf (0x00 prefix), HashChildren (0x01 prefix)",
+    "merkletree/merkle_verifier.go:45-117 VerifyInclusionProof, VerifyInclusionProofByHash, RootFromInclusionProof, RootFromInclusionProofAndHash (the verifier behind every verdict here)",
+    "merkletree/merkle_verifier.go:217-223 parent, isRightChild (helpers of that verifier)",
+    "merkletree/merkle_verifier.go:119-215 VerifyConsistencyProof (used only to cross-confirm roots)",
+    "merkletree/merkle_tree_interface.go:18-53 MerkleTreeInterface, FullMerkleTreeInterface: declared, never implemented in the module (no Go tree builder or prover)",
+    "merkletree/tree_hasher_test.go:24-69 test vector types, sha256EmptyHash, dh, getTestVector: empty hash, 3 leaf hashes, 1 node hash (getTestVector is defined but not called by any upstream test)",
+    "merkletree/merkle_verifier_test.go:30-32 sha256EmptyTreeHash",
+    "merkletree/merkle_verifier_test.go:34-119 verifierCheck: the known-good check plus the corruption set applied to every known-good inclusion proof",
+    "merkletree/merkle_verifier_test.go:229-240 getInputs: the 8 leaf inputs",
+    "merkletree/merkle_verifier_test.go:242-275 getInclusionTestVector: 5 inclusion proofs plus a skipped placeholder at index 0",
+    "merkletree/merkle_verifier_test.go:277-287 getRoots: roots for tree sizes 1..8 over getInputs",
+    "merkletree/merkle_verifier_test.go:289-319 getConsistencyProofs: 4 consistency proofs (outside this schema; used to cross-confirm roots)",
+    "merkletree/merkle_verifier_test.go:321-350 TestVerifyInclusionProofTreeSizeOne: size-1 proof from a real CT instance, root at line 347",
+    "merkletree/merkle_verifier_test.go:352-402 TestVerifyInclusionProof: 8 invalid path/root calls (lines 356-378) and the loop over getInclusionTestVector()[1..5] (lines 384-400)",
+    "serialization_test.go:359-388 TestX509MerkleTreeLeafHash: serialized MerkleTreeLeaf for testdata/test-cert.pem (hex literal at line 383)",
+    "testdata/certs.go:394-400 TestCertB64LeafHash, TestPreCertB64LeafHash",
+    "testdata/test-cert.pem:1-60 certificate behind the size-1 tree; testdata/test-cert.proof (118-byte binary SCT, whole file) its timestamp",
+    "ctutil/ctutil_test.go:27-90 TestLeafHash: leaf hashes for the cert, precert and embedded-SCT cases",
+    "scanner/scanner_test_data.go:23-400 FourEntrySTH (tree_size 4 root, lines 23-27), FourEntries (28-264), Entry0..Entry3 (266-357), makeParent and CalcRootHash (360-400): a non-RFC test-data helper, deliberately not a known answer (see deviations)"
+  ],
+  "empty_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "hash_checks": [
+    {
+      "name": "tree_hasher_test.go:59 getTestVector().leaves[0] (0-byte input)",
+      "kind": "leaf",
+      "input_hex": "",
+      "hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+    },
+    {
+      "name": "tree_hasher_test.go:60 getTestVector().leaves[1] (1-byte input)",
+      "kind": "leaf",
+      "input_hex": "00",
+      "hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    {
+      "name": "tree_hasher_test.go:61 getTestVector().leaves[2] (16-byte input)",
+      "kind": "leaf",
+      "input_hex": "101112131415161718191a1b1c1d1e1f",
+      "hash": "3bfb960453ebaebf33727da7a1f4db38acc051d381b6da20d6d4e88f0eabfd7a"
+    },
+    {
+      "name": "tree_hasher_test.go:64-66 getTestVector().nodes[0]",
+      "kind": "node",
+      "left": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "right": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "hash": "1a378704c17da31e2d05b6d121c2bb2c7d76f6ee6fa8f983e596c2d034963c57"
+    },
+    {
+      "name": "serialization_test.go:383 serialized X509 MerkleTreeLeaf of testdata/test-cert.pem; hash = testdata/certs.go:396 TestCertB64LeafHash (ctutil_test.go:35-40 'cert'; merkle_verifier_test.go:347 size-1 root)",
+      "kind": "leaf",
+      "input_hex": "00000000013ddb27ded900000002ce308202ca30820233a003020102020106300d06092a864886f70d01010505003055310b300906035504061302474231243022060355040a131b4365727469666963617465205472616e73706172656e6379204341310e300c0603550408130557616c65733110300e060355040713074572772057656e301e170d3132303630313030303030305a170d3232303630313030303030305a3052310b30090603550406130247423121301f060355040a13184365727469666963617465205472616e73706172656e6379310e300c0603550408130557616c65733110300e060355040713074572772057656e30819f300d06092a864886f70d010101050003818d0030818902818100b1fa37936111f8792da2081c3fe41925008531dc7f2c657bd9e1de4704160b4c9f19d54ada4470404c1c51341b8f1f7538dddd28d9aca48369fc5646ddcc7617f8168aae5b41d43331fca2dadfc804d57208949061f9eef902ca47ce88c644e000f06eeeccabdc9dd2f68a22ccb09dc76e0dbc73527765b1a37a8c676253dcc10203010001a381ac3081a9301d0603551d0e041604146a0d982a3b62c44b6d2ef4e9bb7a01aa9cb798e2307d0603551d230476307480145f9d880dc873e654d4f80dd8e6b0c124b447c355a159a4573055310b300906035504061302474231243022060355040a131b4365727469666963617465205472616e73706172656e6379204341310e300c0603550408130557616c65733110300e060355040713074572772057656e82010030090603551d1304023000300d06092a864886f70d010105050003818100171cd84aac414a9a030f22aac8f688b081b2709b848b4e5511406cd707fed028597a9faefc2eee2978d633aaac14ed3235197da87e0f71b8875f1ac9e78b281749ddedd007e3ecf50645f8cbf667256cd6a1647b5e13203bb8582de7d6696f656d1c60b95f456b7fcf338571908f1c69727d24c4fccd249295795814d1dac0e60000",
+      "hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6"
+    },
+    {
+      "name": "ctutil_test.go:41-53 'precert' and 'cert with embedded SCT'; hash = testdata/certs.go:400 TestPreCertB64LeafHash; input = tls.Marshal(ct.MerkleTreeLeafFromChain(TestPreCertPEM+CACertPEM, precert, TestPreCertProof timestamp)) built by the module (no upstream hex literal for this input)",
+      "kind": "leaf",
+      "input_hex": "00000000013ddb27df93000102adddca08b8bf9861f035940c940156d8350fdff899a6239c6bd77255b8f8fc00023730820233a003020102020107300d06092a864886f70d01010505003055310b300906035504061302474231243022060355040a131b4365727469666963617465205472616e73706172656e6379204341310e300c0603550408130557616c65733110300e060355040713074572772057656e301e170d3132303630313030303030305a170d3232303630313030303030305a3052310b30090603550406130247423121301f060355040a13184365727469666963617465205472616e73706172656e6379310e300c0603550408130557616c65733110300e060355040713074572772057656e30819f300d06092a864886f70d010101050003818d0030818902818100beef98e7c26877ae385f75325a0c1d329bedf18faaf4d796bf047eb7e1ce15c95ba2f80ee458bd7db86f8a4b252191a79bd700c38e9c0389b45cd4dc9a120ab21e0cb41cd0e72805a410cd9c5bdb5d4927726daf1710f60187377ea25b1a1e39eed0b88119dc154dc68f7da8e30caf158a33e6c9509f4a05b01409ff5dd87eb50203010001a381ac3081a9301d0603551d0e041604142031541af25c05ffd8658b6843794f5e9036f7b4307d0603551d230476307480145f9d880dc873e654d4f80dd8e6b0c124b447c355a159a4573055310b300906035504061302474231243022060355040a131b4365727469666963617465205472616e73706172656e6379204341310e300c0603550408130557616c65733110300e060355040713074572772057656e82010030090603551d13040230000000",
+      "hash": "99b93e7791435b7a0d64909b3a2f36f2ba82de17feaa18a04d6546717119ab55"
+    }
+  ],
+  "trees": [
+    {
+      "name": "merkle_verifier_test.go:279 getRoots()[0]: MTH of the first 1 getInputs() leaves (lines 231-231)",
+      "leaf_data": [
+        ""
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 1,
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+    },
+    {
+      "name": "merkle_verifier_test.go:280 getRoots()[1]: MTH of the first 2 getInputs() leaves (lines 231-232)",
+      "leaf_data": [
+        "",
+        "00"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 2,
+      "root": "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+    },
+    {
+      "name": "merkle_verifier_test.go:281 getRoots()[2]: MTH of the first 3 getInputs() leaves (lines 231-233)",
+      "leaf_data": [
+        "",
+        "00",
+        "10"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 3,
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77"
+    },
+    {
+      "name": "merkle_verifier_test.go:282 getRoots()[3]: MTH of the first 4 getInputs() leaves (lines 231-234)",
+      "leaf_data": [
+        "",
+        "00",
+        "10",
+        "2021"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 4,
+      "root": "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+    },
+    {
+      "name": "merkle_verifier_test.go:283 getRoots()[4]: MTH of the first 5 getInputs() leaves (lines 231-235)",
+      "leaf_data": [
+        "",
+        "00",
+        "10",
+        "2021",
+        "3031"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 5,
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4"
+    },
+    {
+      "name": "merkle_verifier_test.go:284 getRoots()[5]: MTH of the first 6 getInputs() leaves (lines 231-236)",
+      "leaf_data": [
+        "",
+        "00",
+        "10",
+        "2021",
+        "3031",
+        "40414243"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 6,
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef"
+    },
+    {
+      "name": "merkle_verifier_test.go:285 getRoots()[6]: MTH of the first 7 getInputs() leaves (lines 231-237)",
+      "leaf_data": [
+        "",
+        "00",
+        "10",
+        "2021",
+        "3031",
+        "40414243",
+        "5051525354555657"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+        "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 7,
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c"
+    },
+    {
+      "name": "merkle_verifier_test.go:286 getRoots()[7]: MTH of the first 8 getInputs() leaves (lines 231-238)",
+      "leaf_data": [
+        "",
+        "00",
+        "10",
+        "2021",
+        "3031",
+        "40414243",
+        "5051525354555657",
+        "606162636465666768696a6b6c6d6e6f"
+      ],
+      "leaf_hashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+        "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+        "46f6ffadd3d06a09ff3c5860d2755c8b9819db7df44251788c7d8e3180de8eb1"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 8,
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328"
+    },
+    {
+      "name": "merkle_verifier_test.go:321-350 TestVerifyInclusionProofTreeSizeOne: 1-leaf tree from a real CT instance, leaf = serialized MerkleTreeLeaf of testdata/test-cert.pem (serialization_test.go:383), root at line 347",
+      "leaf_data": [
+        "00000000013ddb27ded900000002ce308202ca30820233a003020102020106300d06092a864886f70d01010505003055310b300906035504061302474231243022060355040a131b4365727469666963617465205472616e73706172656e6379204341310e300c0603550408130557616c65733110300e060355040713074572772057656e301e170d3132303630313030303030305a170d3232303630313030303030305a3052310b30090603550406130247423121301f060355040a13184365727469666963617465205472616e73706172656e6379310e300c0603550408130557616c65733110300e060355040713074572772057656e30819f300d06092a864886f70d010101050003818d0030818902818100b1fa37936111f8792da2081c3fe41925008531dc7f2c657bd9e1de4704160b4c9f19d54ada4470404c1c51341b8f1f7538dddd28d9aca48369fc5646ddcc7617f8168aae5b41d43331fca2dadfc804d57208949061f9eef902ca47ce88c644e000f06eeeccabdc9dd2f68a22ccb09dc76e0dbc73527765b1a37a8c676253dcc10203010001a381ac3081a9301d0603551d0e041604146a0d982a3b62c44b6d2ef4e9bb7a01aa9cb798e2307d0603551d230476307480145f9d880dc873e654d4f80dd8e6b0c124b447c355a159a4573055310b300906035504061302474231243022060355040a131b4365727469666963617465205472616e73706172656e6379204341310e300c0603550408130557616c65733110300e060355040713074572772057656e82010030090603551d1304023000300d06092a864886f70d010105050003818100171cd84aac414a9a030f22aac8f688b081b2709b848b4e5511406cd707fed028597a9faefc2eee2978d633aaac14ed3235197da87e0f71b8875f1ac9e78b281749ddedd007e3ecf50645f8cbf667256cd6a1647b5e13203bb8582de7d6696f656d1c60b95f456b7fcf338571908f1c69727d24c4fccd249295795814d1dac0e60000"
+      ],
+      "leaf_hashes": [
+        "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6"
+      ],
+      "leaf_data_rule": null,
+      "tree_size": 1,
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6"
+    }
+  ],
+  "inclusion": [
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: known good proof (verifierCheck, merkle_verifier_test.go:43)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": true,
+      "upstream_expectation": "valid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: leafIndex - 1 (verifierCheck, merkle_verifier_test.go:48)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": -1,
+      "tree_size": 1,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: leafIndex + 1 (verifierCheck, merkle_verifier_test.go:51)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 1,
+      "tree_size": 1,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: leafIndex ^ 2 (verifierCheck, merkle_verifier_test.go:54)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 2,
+      "tree_size": 1,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: treeSize * 2 (verifierCheck, merkle_verifier_test.go:59)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 2,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: treeSize / 2 (verifierCheck, merkle_verifier_test.go:62)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 0,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: leaf data replaced by 'WrongLeaf' (verifierCheck, merkle_verifier_test.go:67)",
+      "leaf_hash": "d0f3415286a46ca6784573d4ab6e3f3f3c3342ad315a7c965a9d0599e49b33aa",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: root replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:72)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: trailing garbage (zero-length element appended) (verifierCheck, merkle_verifier_test.go:90)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        ""
+      ],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: trailing root (root appended to the proof) (verifierCheck, merkle_verifier_test.go:95)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6"
+      ],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: preceding garbage (zero-length element prepended) (verifierCheck, merkle_verifier_test.go:109)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        ""
+      ],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProofTreeSizeOne (merkle_verifier_test.go:347, real CT instance, leaf = test-cert.pem MerkleTreeLeaf), leaf index 0, tree size 1: corrupted: preceding root (root prepended to the proof) (verifierCheck, merkle_verifier_test.go:114)",
+      "leaf_hash": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6"
+      ],
+      "root": "04a64b64631b0270d6d204168cd24d0b24b6220c1e5a7efa616ded165bb702e6",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid path 1 (merkle_verifier_test.go:356)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 0,
+      "path": [],
+      "root": "",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid path 2 (merkle_verifier_test.go:359)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid path 3 (merkle_verifier_test.go:362)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 1,
+      "tree_size": 0,
+      "path": [],
+      "root": "",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid path 4 (merkle_verifier_test.go:365)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 2,
+      "tree_size": 1,
+      "path": [],
+      "root": "",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid root 1 (merkle_verifier_test.go:369)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 0,
+      "path": [],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid root 2 (merkle_verifier_test.go:372)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid root 3 (merkle_verifier_test.go:375)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 1,
+      "tree_size": 0,
+      "path": [],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof: invalid root 4 (merkle_verifier_test.go:378)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 2,
+      "tree_size": 1,
+      "path": [],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: known good proof (verifierCheck, merkle_verifier_test.go:43)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": true,
+      "upstream_expectation": "valid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: leafIndex - 1 (verifierCheck, merkle_verifier_test.go:48)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": -1,
+      "tree_size": 1,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: leafIndex + 1 (verifierCheck, merkle_verifier_test.go:51)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 1,
+      "tree_size": 1,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: leafIndex ^ 2 (verifierCheck, merkle_verifier_test.go:54)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 2,
+      "tree_size": 1,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: treeSize * 2 (verifierCheck, merkle_verifier_test.go:59)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 2,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: treeSize / 2 (verifierCheck, merkle_verifier_test.go:62)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 0,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: leaf data replaced by 'WrongLeaf' (verifierCheck, merkle_verifier_test.go:67)",
+      "leaf_hash": "d0f3415286a46ca6784573d4ab6e3f3f3c3342ad315a7c965a9d0599e49b33aa",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: root replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:72)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: trailing garbage (zero-length element appended) (verifierCheck, merkle_verifier_test.go:90)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        ""
+      ],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: trailing root (root appended to the proof) (verifierCheck, merkle_verifier_test.go:95)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+      ],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: preceding garbage (zero-length element prepended) (verifierCheck, merkle_verifier_test.go:109)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        ""
+      ],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[1] (merkle_verifier_test.go:394), leaf index 0, tree size 1: corrupted: preceding root (root prepended to the proof) (verifierCheck, merkle_verifier_test.go:114)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+      ],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: known good proof (verifierCheck, merkle_verifier_test.go:43)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "valid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: leafIndex - 1 (verifierCheck, merkle_verifier_test.go:48)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": -1,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: leafIndex + 1 (verifierCheck, merkle_verifier_test.go:51)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 1,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: leafIndex ^ 2 (verifierCheck, merkle_verifier_test.go:54)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 2,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: treeSize * 2 (verifierCheck, merkle_verifier_test.go:59)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 16,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: treeSize / 2 (verifierCheck, merkle_verifier_test.go:62)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 4,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: leaf data replaced by 'WrongLeaf' (verifierCheck, merkle_verifier_test.go:67)",
+      "leaf_hash": "d0f3415286a46ca6784573d4ab6e3f3f3c3342ad315a7c965a9d0599e49b33aa",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: root replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:72)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: proof[0] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: proof[1] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: proof[2] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: trailing garbage (zero-length element appended) (verifierCheck, merkle_verifier_test.go:90)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4",
+        ""
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: trailing root (root appended to the proof) (verifierCheck, merkle_verifier_test.go:95)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4",
+        "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: truncated proof (last element removed) (verifierCheck, merkle_verifier_test.go:102)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: preceding garbage (zero-length element prepended) (verifierCheck, merkle_verifier_test.go:109)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[2] (merkle_verifier_test.go:394), leaf index 0, tree size 8: corrupted: preceding root (root prepended to the proof) (verifierCheck, merkle_verifier_test.go:114)",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: known good proof (verifierCheck, merkle_verifier_test.go:43)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "valid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: leafIndex - 1 (verifierCheck, merkle_verifier_test.go:48)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 4,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: leafIndex + 1 (verifierCheck, merkle_verifier_test.go:51)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 6,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: leafIndex ^ 2 (verifierCheck, merkle_verifier_test.go:54)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 7,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: treeSize * 2 (verifierCheck, merkle_verifier_test.go:59)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 16,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: treeSize / 2 (verifierCheck, merkle_verifier_test.go:62)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 4,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: leaf data replaced by 'WrongLeaf' (verifierCheck, merkle_verifier_test.go:67)",
+      "leaf_hash": "d0f3415286a46ca6784573d4ab6e3f3f3c3342ad315a7c965a9d0599e49b33aa",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: root replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:72)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: proof[0] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: proof[1] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: proof[2] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: trailing garbage (zero-length element appended) (verifierCheck, merkle_verifier_test.go:90)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+        ""
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: trailing root (root appended to the proof) (verifierCheck, merkle_verifier_test.go:95)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+        "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: truncated proof (last element removed) (verifierCheck, merkle_verifier_test.go:102)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: preceding garbage (zero-length element prepended) (verifierCheck, merkle_verifier_test.go:109)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[3] (merkle_verifier_test.go:394), leaf index 5, tree size 8: corrupted: preceding root (root prepended to the proof) (verifierCheck, merkle_verifier_test.go:114)",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: known good proof (verifierCheck, merkle_verifier_test.go:43)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": true,
+      "upstream_expectation": "valid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: leafIndex - 1 (verifierCheck, merkle_verifier_test.go:48)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 1,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: leafIndex + 1 (verifierCheck, merkle_verifier_test.go:51)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 3,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: leafIndex ^ 2 (verifierCheck, merkle_verifier_test.go:54)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 0,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: treeSize * 2 (verifierCheck, merkle_verifier_test.go:59)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 6,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: treeSize / 2 (verifierCheck, merkle_verifier_test.go:62)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 1,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: leaf data replaced by 'WrongLeaf' (verifierCheck, merkle_verifier_test.go:67)",
+      "leaf_hash": "d0f3415286a46ca6784573d4ab6e3f3f3c3342ad315a7c965a9d0599e49b33aa",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: root replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:72)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: proof[0] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: trailing garbage (zero-length element appended) (verifierCheck, merkle_verifier_test.go:90)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        ""
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: trailing root (root appended to the proof) (verifierCheck, merkle_verifier_test.go:95)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: truncated proof (last element removed) (verifierCheck, merkle_verifier_test.go:102)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: preceding garbage (zero-length element prepended) (verifierCheck, merkle_verifier_test.go:109)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[4] (merkle_verifier_test.go:394), leaf index 2, tree size 3: corrupted: preceding root (root prepended to the proof) (verifierCheck, merkle_verifier_test.go:114)",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: known good proof (verifierCheck, merkle_verifier_test.go:43)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": true,
+      "upstream_expectation": "valid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: leafIndex - 1 (verifierCheck, merkle_verifier_test.go:48)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 0,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: leafIndex + 1 (verifierCheck, merkle_verifier_test.go:51)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 2,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: leafIndex ^ 2 (verifierCheck, merkle_verifier_test.go:54)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 3,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: treeSize * 2 (verifierCheck, merkle_verifier_test.go:59)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 10,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: treeSize / 2 (verifierCheck, merkle_verifier_test.go:62)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 2,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: leaf data replaced by 'WrongLeaf' (verifierCheck, merkle_verifier_test.go:67)",
+      "leaf_hash": "d0f3415286a46ca6784573d4ab6e3f3f3c3342ad315a7c965a9d0599e49b33aa",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: root replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:72)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: proof[0] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: proof[1] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: proof[2] replaced by the empty tree hash (verifierCheck, merkle_verifier_test.go:82)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: trailing garbage (zero-length element appended) (verifierCheck, merkle_verifier_test.go:90)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        ""
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: trailing root (root appended to the proof) (verifierCheck, merkle_verifier_test.go:95)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: truncated proof (last element removed) (verifierCheck, merkle_verifier_test.go:102)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: preceding garbage (zero-length element prepended) (verifierCheck, merkle_verifier_test.go:109)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "",
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "TestVerifyInclusionProof getInclusionTestVector()[5] (merkle_verifier_test.go:394), leaf index 1, tree size 5: corrupted: preceding root (root prepended to the proof) (verifierCheck, merkle_verifier_test.go:114)",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": false,
+      "upstream_expectation": "invalid"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:1]) over getInputs(), root getRoots()[0]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 1,
+      "path": [],
+      "root": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:2]) over getInputs(), root getRoots()[1]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 2,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+      ],
+      "root": "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:2]) over getInputs(), root getRoots()[1]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 2,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+      ],
+      "root": "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:3]) over getInputs(), root getRoots()[2]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 3,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:3]) over getInputs(), root getRoots()[2]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 3,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(2, D[0:3]) over getInputs(), root getRoots()[2]",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 3,
+      "path": [
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "aeb6bcfe274b70a14fb067a5e5578264db0fa9b51af5e0ba159158f329e06e77",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:4]) over getInputs(), root getRoots()[3]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 4,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e"
+      ],
+      "root": "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:4]) over getInputs(), root getRoots()[3]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 4,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e"
+      ],
+      "root": "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(2, D[0:4]) over getInputs(), root getRoots()[3]",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 4,
+      "path": [
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(3, D[0:4]) over getInputs(), root getRoots()[3]",
+      "leaf_hash": "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+      "leaf_index": 3,
+      "tree_size": 4,
+      "path": [
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125"
+      ],
+      "root": "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:5]) over getInputs(), root getRoots()[4]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 5,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:5]) over getInputs(), root getRoots()[4]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 5,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(2, D[0:5]) over getInputs(), root getRoots()[4]",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 5,
+      "path": [
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(3, D[0:5]) over getInputs(), root getRoots()[4]",
+      "leaf_hash": "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+      "leaf_index": 3,
+      "tree_size": 5,
+      "path": [
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(4, D[0:5]) over getInputs(), root getRoots()[4]",
+      "leaf_hash": "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+      "leaf_index": 4,
+      "tree_size": 5,
+      "path": [
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "4e3bbb1f7b478dcfe71fb631631519a3bca12c9aefca1612bfce4c13a86264d4",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:6]) over getInputs(), root getRoots()[5]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 6,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a"
+      ],
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:6]) over getInputs(), root getRoots()[5]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 6,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a"
+      ],
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(2, D[0:6]) over getInputs(), root getRoots()[5]",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 6,
+      "path": [
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a"
+      ],
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(3, D[0:6]) over getInputs(), root getRoots()[5]",
+      "leaf_hash": "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+      "leaf_index": 3,
+      "tree_size": 6,
+      "path": [
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a"
+      ],
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(4, D[0:6]) over getInputs(), root getRoots()[5]",
+      "leaf_hash": "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+      "leaf_index": 4,
+      "tree_size": 6,
+      "path": [
+        "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(5, D[0:6]) over getInputs(), root getRoots()[5]",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 6,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "76e67dadbcdf1e10e1b74ddc608abd2f98dfb16fbce75277b5232a127f2087ef",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 7,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "837dbb152e9b079010717e84e865da4ebc0fa198a806d59d31bf15accef22d0e"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 7,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "837dbb152e9b079010717e84e865da4ebc0fa198a806d59d31bf15accef22d0e"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(2, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 7,
+      "path": [
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "837dbb152e9b079010717e84e865da4ebc0fa198a806d59d31bf15accef22d0e"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(3, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+      "leaf_index": 3,
+      "tree_size": 7,
+      "path": [
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "837dbb152e9b079010717e84e865da4ebc0fa198a806d59d31bf15accef22d0e"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(4, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+      "leaf_index": 4,
+      "tree_size": 7,
+      "path": [
+        "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+        "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(5, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 7,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(6, D[0:7]) over getInputs(), root getRoots()[6]",
+      "leaf_hash": "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+      "leaf_index": 6,
+      "tree_size": 7,
+      "path": [
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "ddb89be403809e325750d3d263cd78929c2942b7942a34b77e122c9594a74c8c",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(0, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "leaf_index": 0,
+      "tree_size": 8,
+      "path": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(1, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7",
+      "leaf_index": 1,
+      "tree_size": 8,
+      "path": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        "5f083f0a1a33ca076a95279832580db3e0ef4584bdff1f54c8a360f50de3031e",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(2, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+      "leaf_index": 2,
+      "tree_size": 8,
+      "path": [
+        "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(3, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "07506a85fd9dd2f120eb694f86011e5bb4662e5c415a62917033d4a9624487e7",
+      "leaf_index": 3,
+      "tree_size": 8,
+      "path": [
+        "0298d122906dcfc10892cb53a73992fc5b9f493ea4c9badb27b791b4127a7fe7",
+        "fac54203e7cc696cf0dfcb42c92a1d9dbaf70ad9e621f4bd8d98662f00e3c125",
+        "6b47aaf29ee3c2af9af889bc1fb9254dabd31177f16232dd6aab035ca39bf6e4"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(4, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+      "leaf_index": 4,
+      "tree_size": 8,
+      "path": [
+        "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(5, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "4271a26be0d8a84f0bd54c8c302e7cb3a3b5d1fa6780a40bcce2873477dab658",
+      "leaf_index": 5,
+      "tree_size": 8,
+      "path": [
+        "bc1a0643b12e4d2d7c77918f44e0f4f79a838b6cf9ec5b5c283e1f4d88599e6b",
+        "ca854ea128ed050b41b35ffc1b87b8eb2bde461e9e3b5596ece6b9d5975a0ae0",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(6, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+      "leaf_index": 6,
+      "tree_size": 8,
+      "path": [
+        "46f6ffadd3d06a09ff3c5860d2755c8b9819db7df44251788c7d8e3180de8eb1",
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    },
+    {
+      "name": "generated: RFC 9162 PATH(7, D[0:8]) over getInputs(), root getRoots()[7]",
+      "leaf_hash": "46f6ffadd3d06a09ff3c5860d2755c8b9819db7df44251788c7d8e3180de8eb1",
+      "leaf_index": 7,
+      "tree_size": 8,
+      "path": [
+        "b08693ec2e721597130641e8211e7eedccb4c26413963eee6c1e2ed16ffb1a5f",
+        "0ebc5d3437fbe2db158b9f126a1d118e308181031d0a949f8dededebc558ef6a",
+        "d37ee418976dd95753c1c73862b9398fa2a2cf9b4ff0fdfe8b30cd95209614b7"
+      ],
+      "root": "5dc9da79a70659a9ad559cb701ded9a2ab9d823aad2f4960cfe370eff4604328",
+      "valid": true,
+      "upstream_expectation": "none"
+    }
+  ],
+  "deviations": [
+    "Not the merkletree code under test, and not used as a known answer: scanner/scanner_test_data.go:23-27 hard-codes FourEntrySTH, tree_size 4 with sha256_root_hash 0JBu0CkZnKXc1niEndDaqqgCRHucCfVt1/WBAXs/5T8= (hex d0906ed029199ca5dcd678849dd0daaaa802447b9c09f56dd7f581017b3fe53f), over Entry0..Entry3 (lines 266-357, also served as FourEntries, lines 28-264). That root comes from the scanner package's test-data helper CalcRootHash (lines 373-400, makeParent at 360-371), which is not RFC 6962/9162: each leaf is SHA-256(entry) with no 0x00 prefix, and each parent is SHA-256 of a 64-byte buffer that holds only the first 31 bytes of each child (makeParent copies into r[0:31] and r[32:63], leaving bytes 31 and 63 zero), with no 0x01 prefix. The RFC 9162 MTH of the same four entries is 036ead9a071a509a64157169933092f1b276f5c4011201312806052fc8622791. The interop program reproduces d0906ed029199ca5dcd678849dd0daaaa802447b9c09f56dd7f581017b3fe53f by calling scanner.CalcRootHash and by the procedure just described, and the module's own merkletree verifier accepts all four leaves against 036ead9a071a509a64157169933092f1b276f5c4011201312806052fc8622791 and rejects all four against d0906ed029199ca5dcd678849dd0daaaa802447b9c09f56dd7f581017b3fe53f, so the fixture deliberately leaves the value out."
+  ],
+  "discrepancies": [],
+  "notes": "Version choice: certificate-transparency-go shipped its own RFC 6962 Merkle code only in package merkletree, present from v1.0.1 through v1.0.16 with identical test vectors in every release (VerifyInclusionProofByHash exists from v1.0.4; from v1.0.13 the prefixes come from ct.TreeLeafPrefix/TreeNodePrefix, same values). v1.0.17 removed it and imports github.com/google/trillian/merkle; v1.2.x and v1.3.x import github.com/transparency-dev/merkle. v1.0.16 is therefore the last version with its own implementation and fixtures, and is the one used. What the package contains: a TreeHasher (HashEmpty, HashLeaf with prefix 0x00, HashChildren with prefix 0x01, SHA-256 supplied by the caller) and a MerkleVerifier (inclusion and consistency). MerkleTreeInterface and FullMerkleTreeInterface are declared but never implemented anywhere in the module, so there is no Go tree builder and no proof generator. Tree roots are confirmed two ways: an RFC 9162 MTH recursion in the Go program that hashes only through the module's HashLeaf and HashChildren, and the module's own verifier (VerifyInclusionProofByHash) accepting proofs against each published root. Published inclusion proofs cover getInputs() tree sizes 1, 3, 5 and 8 plus the real-CT size-1 tree; the 4 published consistency proofs (merkle_verifier_test.go:294-319, outside this schema) pass the module's VerifyConsistencyProof and so also confirm the roots for sizes 1, 2, 5, 6, 8; sizes 4 and 7 are confirmed by the verifier only through the generated cases. RFC conformance: identical hash primitives (SHA-256, 0x00 leaf prefix, 0x01 node prefix, empty tree = SHA-256 of the empty string). The inclusion verifier is the classic C++ CT algorithm (walk nodeIndex/lastNode up the tree, skip a level when the node is the last one and has no sibling); it is equivalent to RFC 9162 section 2.1.3.2: it rejects leaf_index >= tree_size, leaf_index < 0 and tree_size < 1, consumes the path bottom to top, and rejects a path that is one element too short or too long. Every published valid path equals the RFC 9162 PATH computed over the published leaves, and every published root equals the RFC 9162 MTH. No deviation found. Leniencies that are not a change to the tree: the verifier never checks that the leaf hash, the path elements or the root are 32 bytes (it only rejects a zero-length computed root); in the published cases a zero-length path element only ever appears as an extra element, which the path-length check rejects. Leaf data: the published inputs are 0, 1, 2, 4, 8 and 16 bytes long, the real-CT leaf is a 735-byte serialized MerkleTreeLeaf and the precert leaf in hash_checks is 616 bytes; none is 32 bytes. A library whose public API takes only 32-byte leaf data must start from leaf_hashes; hash_checks of kind leaf can only be checked as SHA-256(0x00 || input) directly. Negative cases: every published inclusion case is the materialized output of the upstream code itself. upstream_vectors.go holds merkle_verifier_test.go:30-119 (verifierCheck), 219-319 (vectors), 322-349 and 353-401 (the two inclusion test bodies), tree_hasher_test.go:24-69 and serialization_test.go:383 byte for byte (checked on every run against vendored copies of those upstream files, see below), and runs them against a recording wrapper around the module's MerkleVerifier; each case name gives the upstream line of the call. verifierCheck applies 12 corruptions to each of the 6 known-good proofs, plus a truncated proof when the path is non-empty and one replaced element per path element; TestVerifyInclusionProof adds 8 direct invalid path/root calls. All upstream expectations hold. An RFC 9162 section 2.1.3.2 verifier written from the RFC text over the module's hasher gives the module's answer on 130 of 130 cases, so no case carries rfc9162_valid. Some negative cases use inputs outside a strict API's domain: leaf_index -1, tree_size 0, an empty root (\"\") and zero-length path elements (\"\"); a consumer should count an argument error raised for them as valid=false. Not included: getInclusionTestVector()[0] ({0, 0, 0}) is a placeholder the upstream loop skips (\"i = 0 is an invalid path\") and has no root. The consistency proofs and verifierConsistencyCheck corruptions are outside this inclusion-only schema. tree_hasher_test.go's collision tests (Hello/World) assert only inequalities, with no hard-coded values. client/logclient_test.go ProofByHashResp, the STH root hashes in client, gossip, loglist, dnsclient and signatures tests, and the trillian/ctfe handler mocks carry no leaves or trees to rebuild, so they are not Merkle fixtures. tree_hasher_test.go getTestVector() is defined but never called by an upstream test; its values are included and reproduce. Generated cases: every (leaf_index, tree_size) for tree sizes 1..8 over getInputs(), with the path from an RFC 9162 PATH recursion in the Go program built on the module's hasher, each accepted by the module's verifier against the published getRoots() value. Names start with \"generated:\"; every other inclusion case is published. Not a known answer, deliberately: scanner/scanner_test_data.go:23-27 hard-codes a tree_size 4 root, FourEntrySTH sha256_root_hash 0JBu0CkZnKXc1niEndDaqqgCRHucCfVt1/WBAXs/5T8= (hex d0906ed029199ca5dcd678849dd0daaaa802447b9c09f56dd7f581017b3fe53f), over the four entries Entry0..Entry3. It is produced by the scanner package's test-data helper CalcRootHash, which is not RFC 6962/9162: no 0x00 leaf prefix, no 0x01 node prefix, and each parent hashes only the first 31 bytes of each child (makeParent's 31-byte copies). The RFC 9162 MTH of the same entries is 036ead9a071a509a64157169933092f1b276f5c4011201312806052fc8622791; the module's own merkletree verifier accepts every entry against that root and rejects every entry against the FourEntrySTH value. The Go program reproduces the FourEntrySTH value with scanner.CalcRootHash and with that non-RFC procedure on every run; it is listed under deviations (a non-conformant helper elsewhere in the module, not the merkletree code) so that nobody adds it later as a known answer. Running it: the Go program lives at interop/go/certificate-transparency-go/ in the truestamp_merkle library, and this fixture at vectors/interop/certificate-transparency-go.json. From the program directory, go run . -fixtures ../../../vectors/interop/certificate-transparency-go.json checks the fixture and prints one OK line, or one FAIL line per problem and exit status 1; go run . -fixtures ../../../vectors/interop/certificate-transparency-go.json -write regenerates it first; adding -ours ../../../vectors/merkle.json also checks the library's own vectors with the module's hasher and verifier and prints a second OK line. -fixtures is required. Apart from those paths the program reads only files inside its own directory: the upstream files it runs or compares at run time (merkletree/merkle_verifier_test.go, merkletree/tree_hasher_test.go, serialization_test.go, testdata/test-cert.pem, testdata/test-cert.proof, and the Apache-2.0 LICENSE) are vendored byte for byte from the v1.0.16 module zip under testdata/certificate-transparency-go@v1.0.16/ there, and the program pins each file's SHA-256. It needs Go 1.26 and the modules pinned by go.sum, fetched once into the module cache, and no network after that. This fixture is self-contained, so ExUnit reads it with no Go dependency; the Go program is the provenance check to rerun whenever the fixture is regenerated, and the library's opt-in go_interop tests run it with -ours and require exit status 0."
+}
