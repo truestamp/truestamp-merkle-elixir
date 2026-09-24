@@ -11,8 +11,7 @@ defmodule Truestamp.Merkle.MixProject do
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      description:
-        "SHA-256 Merkle trees with inclusion proofs, built to the frozen tree contract behind Truestamp's block roots.",
+      description: "Deterministic SHA-256 Merkle trees with inclusion proofs, in pure Elixir.",
       package: package(),
       source_url: @source_url
     ]
