@@ -48,5 +48,9 @@ jobs:
       - name: Format check
         run: mix format --check-formatted
 
+      - name: Vectors are current
+        # Plain elixir, so the generator cannot load the library.
+        run: elixir vectors/generate.exs --check
+
       - name: Test (warnings as errors)
         run: mix test --warnings-as-errors

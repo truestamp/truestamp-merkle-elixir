@@ -90,14 +90,17 @@ characters: `l` means the sibling sits to the left of the running hash, `r` to t
    when it equals a root obtained some other way.
 
 A one-entry tree's path is empty, and its root is the leaf itself. A path is refused,
-never repaired:
+never repaired. The checks run in this order, and the first that fails names the refusal:
 
-- A step must be exactly `l:` or `r:` and 64 lowercase hex characters. Uppercase, a
-  trailing newline and a bare hash without its direction are all refused.
-- The value proved must be a valid digest, and never the reserved digest. The padding
-  leaf's hash may appear as a sibling, and is valid there.
-- A path longer than the cap is refused before any step is read. The cap is 64 steps,
-  and a caller can lower it (Truestamp uses 32).
+1. `invalid_leaf`: the digest being proved is not exactly 64 lowercase hex characters.
+2. `reserved_leaf`: it is the reserved digest. The padding leaf's hash may still appear
+   as a sibling, and is valid there.
+3. `too_many_steps`: the path has more steps than the cap. The cap is 64, a caller can
+   lower it (Truestamp uses 32), and the path is refused before any step is read.
+4. `invalid_step`: a step is anything but `l:` or `r:` and exactly 64 lowercase hex
+   characters. Uppercase, a trailing newline and a bare hash are all refused.
+
+A port may spell these refusals its own way, but must refuse in this order.
 
 ### Storing a path
 
@@ -121,7 +124,27 @@ decoder accepts only the one spelling the encoder writes.
 
 ## Known answers
 
-A port of the contract must reproduce these exactly.
+`vectors/merkle.json` is the source of truth for this library's known answers, and a port
+of the contract must reproduce every value in it. `vectors/generate.exs` writes it from
+the contract above without using the library, CI fails if the file and the generator
+disagree, and the tests hold the library to every value it produces. Hashes are lowercase
+hex throughout. The file's sections:
+
+- `constants`: `empty_root`, the root of a tree with no entries; `reserved_digest`;
+  `padding_leaf`; and `max_steps`, the default cap on a path.
+- `trees`: each tree's `entries` as listed (not sorted, so a port must sort), its `root`,
+  its `depth` (levels above the leaves; 0 for an empty or one-entry tree), its
+  `padded_size` (leaves after padding; 0 for an empty tree), and `rfc6962_root`, the root
+  strict RFC 6962 gives the same entries, which differs from `root` exactly when padding
+  was needed. Each of its `paths` gives an entry's `key` and `digest`, its `steps`, and
+  their binary form as `binary_hex` and `base64url`.
+- `entry_refusals`: sets of entries a tree must refuse to build from.
+- `walk_accepts`: a `digest`, `steps` and `max_steps` a walk must accept, with the `root`
+  it reaches.
+- `walk_refusals`: the same inputs a walk must refuse, with the `error` it names.
+- `binary_refusals` and `base64url_refusals`: encodings the decoders must refuse.
+
+The values below are a summary of that file.
 
 **Small trees.** `n` entries with keys `key01` through `keyNN` and digests
 `SHA-256("leaf<i>")` for `i` from 1 to `n`. Counts 3, 5, 6 and 7 are padded.
@@ -147,8 +170,8 @@ whenever padding applies:
 
 **A path.** In the two-entry tree, `key01`'s path is the single step
 `r:d78acbc356fa171ce40bb72ffa74cbde06c36aefc2678a9af18d3975581e969f`, whose binary form
-is 34 bytes, or `AQHXisvDVvoXHOQLty_6dMveBsNq78JniprxjTl1WB6Wnw` in base64url. The tests
-pin `key01`'s path and binary form for n = 1 to 7, and `lk0001`'s for the tree below.
+is 34 bytes, or `AQHXisvDVvoXHOQLty_6dMveBsNq78JniprxjTl1WB6Wnw` in base64url. The
+vectors file has every entry's path for n = 1 to 7, and three paths in the tree below.
 
 **A larger tree.** 300 entries with keys `lk0001` through `lk0300` and digests
 `SHA-256("bigleaf<i>")` have the root

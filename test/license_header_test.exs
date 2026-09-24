@@ -4,8 +4,8 @@
 defmodule Truestamp.LicenseHeaderTest do
   # Every source and document file opens with the copyright line and the SPDX
   # identifier, in its own comment syntax, after a shebang if it has one. Data
-  # and machine-managed files (LICENSE, mix.lock, .gitignore, .tool-versions)
-  # carry none.
+  # and machine-managed files (LICENSE, mix.lock, .gitignore, .tool-versions,
+  # vectors/merkle.json) carry none.
   use ExUnit.Case, async: true
 
   @root Path.expand("..", __DIR__)
@@ -16,7 +16,7 @@ defmodule Truestamp.LicenseHeaderTest do
     "mix.exs",
     ".formatter.exs",
     "*.md",
-    "{lib,test,bench,examples}/**/*.{ex,exs}",
+    "{lib,test,bench,examples,vectors}/**/*.{ex,exs}",
     ".github/**/*.{yml,yaml}"
   ]
 
