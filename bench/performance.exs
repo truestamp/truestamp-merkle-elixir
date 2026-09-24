@@ -1,3 +1,6 @@
+# Copyright (c) 2025-2026 Truestamp, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
 # Measures building a tree, generating proofs and verifying them, and prints a
 # Markdown table. The README's performance table comes from this script.
 #

@@ -1,3 +1,8 @@
+<!--
+Copyright (c) 2025-2026 Truestamp, Inc.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # truestamp_merkle
 
 SHA-256 Merkle trees with inclusion proofs, in pure Elixir with no runtime dependencies
