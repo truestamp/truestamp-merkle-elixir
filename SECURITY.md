@@ -149,13 +149,14 @@ one reserved value:
     padding leaf d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319
                  = SHA-256(0x00 || PADHASH), the *leaf hash* stored in the tree
 
-Padding slots are placed by the tree, never by a caller. Their keys use a reserved
-`__PAD__` prefix that `validate_key!/1` refuses from callers, and they are excluded from
-the leaf index, so `proof/2` will not emit a proof for one.
+Padding slots are placed by the tree, never by a caller. They carry no key, so they are
+absent from the leaf index and `proof/2` will not emit a proof for one. The `__pad__` key
+prefix, in any case, stays reserved: construction refuses a caller's key that begins with
+it.
 
-`PADHASH` is refused on both ends. `validate_hash!/1` raises `ArgumentError` on it, which
-covers every construction surface (`new/2`, `add_entry/2`, `add_entries/2`, `from_stream/2`,
-`from_maps/2`, `from_tuples/2`). `walk/3` returns `{:error, :reserved_leaf}` and `verify/4`
+`PADHASH` is refused on both ends. Construction raises `ArgumentError` on it on every
+surface (`new/2`, `add_entry/2`, `add_entries/2`, `from_stream/2`, `from_maps/2`,
+`from_tuples/2`). `walk/3` returns `{:error, :reserved_leaf}` and `verify/4`
 returns `false` when it is presented as the value being proved.
 
 Both halves are needed. The attack is cheap and requires no cryptography: whoever owns the
@@ -170,9 +171,9 @@ and it is what earns the right to say that a proof for `PADHASH` is always a pro
 padding slot rather than of a real entry.
 
 The reject applies to the leaf value only. The padding *leaf hash* `d37300dc...` is an
-ordinary sibling in most proofs from a padded tree and must keep verifying;
-`validate_proof_element/1` is deliberately untouched. Rejecting siblings would break
-verification for a large fraction of all real entries.
+ordinary sibling in most proofs from a padded tree and must keep verifying, so the step
+parser deliberately does not look for it. Rejecting siblings would break verification
+for a large fraction of all real entries.
 
 There is no wider family of forgeable constants. Interior node values, including the
 all-padding subtree hashes and the empty-tree root, are safe by domain separation:

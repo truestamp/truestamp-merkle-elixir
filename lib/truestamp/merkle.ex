@@ -259,52 +259,16 @@ defmodule Truestamp.Merkle do
     `{:ok, proof}` or `{:error, reason}` rather than raising
   """
 
-  # Longest proof walk/3, verify/4 and steps_from_binary/1 will process, and so
-  # the ceiling on the hashing an untrusted proof can ask for. 64 steps spans a
-  # tree of 2^64 = 18,446,744,073,709,551,616 leaves, past anything that could be
-  # built.
-  @max_proof_depth 64
+  # The public API. Each function delegates to the internal module that owns it:
+  # Tree builds, Path proves and walks, Codec encodes paths for storage, Input holds
+  # the entry rules, and Hash the hashing and hex rules they all share.
 
-  # Ceiling on the depth arithmetic, which keeps the leaf-count math in range. Not a
-  # resource limit: 2^40 = 1,099,511,627,776 (~1 trillion) leaves exhausts memory long
-  # before the cap is reached.
-  @max_tree_depth 40
+  alias __MODULE__.{Builder, Codec, Hash, Path, Tree}
 
-  # Hash size constants for SHA-256 (defense-in-depth against second preimage attacks)
-  # Input hashes must be exactly 32 bytes, preventing internal node forgery (which would be 64 bytes)
-  @expected_hash_bytes 32
-  @expected_hash_hex_chars @expected_hash_bytes * 2
-
-  # Stored hash carried by every padding leaf when a tree is filled out to the
-  # next power of two. Computed at compile time: SHA256(0x00 || 0x00).
-  #
-  # This constant is public and identical in every tree, so it conceals nothing.
-  # A padding leaf is recognizable on sight: from one proof an observer can
-  # compute SHA256(0x00 || @empty_leaf_hash), then SHA256(0x01 || x || x)
-  # repeatedly to get the hash of an all-padding subtree at any level, and match
-  # those against the proof's siblings. That yields the tree depth, the proved
-  # leaf's index, and a range for the real leaf count, which narrows to the exact
-  # count for a leaf near the end of the tree.
-  #
-  # That is accepted, not overlooked. Roots must be reproducible by any third
-  # party from published data alone, so the padding has to be deterministic;
-  # random padding would make a root unreproducible. If an approximate leaf count
-  # is sensitive in your setting, that is a property to design around. In
-  # Truestamp's own deployment it is published alongside every root anyway.
-  @empty_leaf_hash :crypto.hash(:sha256, <<0x00, 0x00>>)
-
-  # The leaf hash every padding slot holds, in every construction path.
-  # Equal to hash_leaf(encode_hex(@empty_leaf_hash)) = SHA256(0x00 || @empty_leaf_hash),
-  # so a padded tree hashes identically whether it came from new/1 or the builder.
-  @padding_leaf_hash :crypto.hash(:sha256, <<0x00>> <> @empty_leaf_hash)
-
-  # Hex spelling of the padding leaf's input hash. Reserved in both directions:
-  # refused as a caller-supplied leaf value, and refused as a verification
-  # subject. Only the padding slots may carry it, and they are placed by the
-  # tree itself, never by a caller.
-  @empty_leaf_hash_hex Base.encode16(@empty_leaf_hash, case: :lower)
-
-  alias __MODULE__.Builder
+  # Interpolated into the docs below.
+  @max_proof_depth Path.max_steps()
+  @expected_hash_hex_chars Hash.digest_hex_chars()
+  @empty_leaf_hash_hex Hash.reserved_digest_hex()
 
   defstruct [:root_hash, :leaves, :tree_depth, :tree_levels, :leaf_index]
 
@@ -322,308 +286,7 @@ defmodule Truestamp.Merkle do
 
   @type walk_error :: :invalid_leaf | :reserved_leaf | :too_many_steps | :invalid_step
 
-  # ============================================================================
-  # Builder API Functions
-  # ============================================================================
-
-  @doc """
-  Creates a new empty builder for incrementally constructing a Merkle tree.
-
-  ## Example
-
-      builder = Merkle.builder()
-      builder = Merkle.add_entry(builder, %{"key" => "entry1", "hash" => "abc..."})
-      tree = Merkle.finalize(builder)
-
-  """
-  @spec builder() :: Builder.t()
-  def builder do
-    %Builder{}
-  end
-
-  @doc """
-  Adds a single entry to the builder.
-
-  Validates the entry and pre-computes its leaf hash. Entries are accumulated
-  for later finalization.
-
-  ## Duplicate Handling
-
-  - If both key AND hash match an entry already added → silently ignored (idempotent)
-  - If key exists with a different hash → raises `ArgumentError`
-
-  ## Example
-
-      builder = Merkle.builder()
-                |> Merkle.add_entry(%{"key" => "entry1", "hash" => "a1b2..."})
-                |> Merkle.add_entry(%{"key" => "entry2", "hash" => "c3d4..."})
-
-  """
-  @spec add_entry(Builder.t(), %{binary() => binary()}) :: Builder.t()
-  def add_entry(%Builder{} = builder, %{"key" => key, "hash" => hash}) do
-    # Validate input
-    validate_key!(key)
-    validate_hash!(hash)
-
-    # Check for duplicates
-    case Map.get(builder.seen, key) do
-      nil ->
-        # New key - compute leaf hash and add
-        leaf_hash = hash_leaf(hash)
-
-        %Builder{
-          leaves: [{key, leaf_hash} | builder.leaves],
-          seen: Map.put(builder.seen, key, hash),
-          count: builder.count + 1
-        }
-
-      ^hash ->
-        # Same key AND same hash - silently ignore (idempotent)
-        builder
-
-      existing_hash ->
-        # Same key but different hash - error!
-        raise ArgumentError, """
-        Duplicate key with different hash detected.
-        Key: #{inspect(key)}
-        Existing hash: #{existing_hash}
-        New hash: #{hash}
-        """
-    end
-  end
-
-  @doc """
-  Adds multiple entries from an enumerable to the builder.
-
-  This is a convenience wrapper that reduces over the enumerable,
-  calling `add_entry/2` for each element.
-
-  ## Example
-
-      entries = [
-        %{"key" => "entry1", "hash" => "a1b2..."},
-        %{"key" => "entry2", "hash" => "c3d4..."}
-      ]
-
-      builder = Merkle.builder() |> Merkle.add_entries(entries)
-      tree = Merkle.finalize(builder)
-
-  """
-  @spec add_entries(Builder.t(), Enumerable.t()) :: Builder.t()
-  def add_entries(%Builder{} = builder, enumerable) do
-    Enum.reduce(enumerable, builder, &add_entry(&2, &1))
-  end
-
-  @doc """
-  Finalizes the builder into a complete Merkle tree.
-
-  Sorts leaves by key (unless `sort: false`), pads to next power of 2,
-  and builds the full tree structure.
-
-  ## Options
-
-    * `:sort` (default: `true`) - When `true`, sorts leaves by key for
-      deterministic ordering. When `false`, preserves insertion order.
-
-  ## Example
-
-      tree = builder |> Merkle.finalize()
-      tree = builder |> Merkle.finalize(sort: false)
-
-      # The returned tree supports all standard operations
-      root = Merkle.root(tree)
-      proof = Merkle.proof(tree, "some-key")
-
-  """
-  @spec finalize(Builder.t(), keyword()) :: t()
-  def finalize(builder, opts \\ [])
-
-  def finalize(%Builder{leaves: [], count: 0}, _opts) do
-    # Empty builder - return empty tree
-    new([])
-  end
-
-  def finalize(%Builder{leaves: leaves, seen: seen, count: _count}, opts) do
-    sort? = Keyword.get(opts, :sort, true)
-
-    # Reverse to get original insertion order (we prepended during add)
-    reversed_leaves = Enum.reverse(leaves)
-
-    # Optionally sort by key
-    sorted_leaves =
-      if sort? do
-        Enum.sort_by(reversed_leaves, &elem(&1, 0))
-      else
-        reversed_leaves
-      end
-
-    # Pad to next power of 2 (leaves are {key, leaf_hash_binary})
-    padded_leaves = pad_builder_leaves_to_power_of_two(sorted_leaves)
-
-    # Build the tree with all levels stored for fast proof generation
-    {root_hash, tree_levels} = build_tree_from_leaf_hashes(padded_leaves)
-    tree_depth = calculate_depth(length(padded_leaves))
-
-    # Reconstruct leaves in original format {key, hash_hex} for consistency.
-    # `seen` holds {key => hash_hex}, keyed on the key exactly as the caller wrote
-    # it, byte for byte, so "Key" and "key" are two separate leaves.
-    # Only include non-padding leaves
-    final_leaves =
-      sorted_leaves
-      |> Enum.map(fn {key, _leaf_hash_binary} ->
-        {key, Map.get(seen, key)}
-      end)
-
-    # Build leaf index map for O(1) key lookup in proof/2
-    leaf_index = build_leaf_index(final_leaves)
-
-    # Convert each level from list to tuple so proof generation can use elem/2
-    # for O(1) sibling access instead of Enum.at/2 which is O(n) on lists
-    tuple_levels = Enum.map(tree_levels, &List.to_tuple/1)
-
-    %__MODULE__{
-      root_hash: root_hash,
-      leaves: final_leaves,
-      tree_depth: tree_depth,
-      tree_levels: tuple_levels,
-      leaf_index: leaf_index
-    }
-  end
-
-  # Helper to pad builder leaves (which are {key, leaf_hash_binary} tuples)
-  defp pad_builder_leaves_to_power_of_two(leaves) do
-    count = length(leaves)
-    next_power = next_power_of_two(count)
-
-    if count == next_power do
-      leaves
-    else
-      # Padding keys begin with __PAD__, a prefix validate_key! refuses in any
-      # case, so they cannot collide with a caller's key.
-      padding =
-        for i <- 1..(next_power - count) do
-          {"__PAD__#{String.pad_leading(Integer.to_string(i), 16, "0")}", @padding_leaf_hash}
-        end
-
-      leaves ++ padding
-    end
-  end
-
-  # Build tree from pre-computed leaf hashes
-  defp build_tree_from_leaf_hashes(leaves) do
-    leaves
-    |> Enum.map(fn {_key, leaf_hash} -> leaf_hash end)
-    |> build_levels_from_leaf_hashes()
-  end
-
-  # ============================================================================
-  # Convenience Wrappers for Streaming
-  # ============================================================================
-
-  @doc """
-  Creates a Merkle tree from an enumerable using extractor functions.
-
-  This is the most flexible convenience wrapper - it works with any data type
-  by using the provided functions to extract keys and hashes.
-
-  **Performance note**: slower than `new/1`, by roughly a quarter at 100k entries and
-  by more than that as the count grows, because of the per-entry extractor calls and
-  the builder's duplicate detection. Use `new/1` when all entries are available upfront
-  and performance is critical. See `Merkle.Builder` docs for measured figures and how
-  much to trust them.
-
-  ## Options
-
-    * `:key_fn` (required) - Function to extract key from each element
-    * `:hash_fn` (required) - Function to extract hash from each element
-    * `:sort` (default: `true`) - Whether to sort by key
-
-  ## Examples
-
-      # From a list of structs
-      tree = records |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.digest)
-
-      # From a database stream
-      tree = Repo.stream(query)
-             |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.hash)
-
-      # Disable sorting for pre-sorted data
-      tree = sorted_records
-             |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.hash, sort: false)
-
-  """
-  @spec from_stream(Enumerable.t(), keyword()) :: t()
-  def from_stream(enumerable, opts) do
-    key_fn = Keyword.fetch!(opts, :key_fn)
-    hash_fn = Keyword.fetch!(opts, :hash_fn)
-
-    enumerable
-    |> Enum.reduce(builder(), fn entry, b ->
-      add_entry(b, %{"key" => key_fn.(entry), "hash" => hash_fn.(entry)})
-    end)
-    |> finalize(Keyword.take(opts, [:sort]))
-  end
-
-  @doc """
-  Creates a Merkle tree from an enumerable of maps with "key" and "hash" fields.
-
-  This is the stream-equivalent of `new/1` - use it when your data is already
-  in the standard `%{"key" => ..., "hash" => ...}` format.
-
-  **Performance note**: this is the builder path with no conversion on top, so it
-  measures within a few percent of `builder + finalize`: close to `new/1` at 100k
-  entries and around 2.5x slower at a million, where the duplicate-detection map
-  starts to cost real time. Use `new/1` when all entries are available upfront and
-  performance is critical. See `Merkle.Builder` docs for measured figures and how
-  much to trust them.
-
-  ## Options
-
-    * `:sort` (default: `true`) - Whether to sort by key
-
-  ## Examples
-
-      tree = map_stream |> Merkle.from_maps()
-      tree = map_stream |> Merkle.from_maps(sort: false)
-
-  """
-  @spec from_maps(Enumerable.t(), keyword()) :: t()
-  def from_maps(enumerable, opts \\ []) do
-    enumerable
-    |> Enum.reduce(builder(), &add_entry(&2, &1))
-    |> finalize(opts)
-  end
-
-  @doc """
-  Creates a Merkle tree from an enumerable of `{key, hash}` tuples.
-
-  **Performance note**: the slowest of the three wrappers, around 1.5x `new/1` at
-  100k entries, because every tuple is turned into a map before the builder sees it.
-  Use `new/1` when all entries are available upfront and performance is critical. See
-  `Merkle.Builder` docs for measured figures and how much to trust them.
-
-  ## Options
-
-    * `:sort` (default: `true`) - Whether to sort by key
-
-  ## Examples
-
-      tree = [{id1, hash1}, {id2, hash2}] |> Merkle.from_tuples()
-      tree = tuple_stream |> Merkle.from_tuples(sort: false)
-
-  """
-  @spec from_tuples(Enumerable.t(), keyword()) :: t()
-  def from_tuples(enumerable, opts \\ []) do
-    enumerable
-    |> Enum.reduce(builder(), fn {key, hash}, b ->
-      add_entry(b, %{"key" => key, "hash" => hash})
-    end)
-    |> finalize(opts)
-  end
-
-  # ============================================================================
-  # Original API Functions
-  # ============================================================================
+  # ── Building a tree from a list ───────────────────────────────────────────
 
   @doc """
   Creates a new Merkle tree from a list of key-hash maps.
@@ -705,86 +368,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec new([%{binary() => binary()}], keyword()) :: t()
-  def new(data, opts \\ [])
-
-  def new([], _opts) do
-    # Empty tree: root hash is HASH("") - hash of empty string
-    # This provides a deterministic, cryptographically sound value
-    empty_tree_hash = :crypto.hash(:sha256, <<>>)
-
-    %__MODULE__{
-      root_hash: empty_tree_hash,
-      leaves: [],
-      tree_depth: 0,
-      tree_levels: [{empty_tree_hash}],
-      leaf_index: %{}
-    }
-  end
-
-  def new(data, opts) when is_list(data) do
-    # Validate input data format
-    validate_input_data!(data)
-
-    # Sort by default, so the same set of entries always yields the same root
-    sort? = Keyword.get(opts, :sort, true)
-
-    # Optionally sort for deterministic ordering
-    leaves =
-      data
-      |> Enum.map(fn %{"key" => key, "hash" => hash} -> {key, hash} end)
-      |> then(fn normalized_data ->
-        if sort? do
-          Enum.sort_by(normalized_data, &elem(&1, 0))
-        else
-          normalized_data
-        end
-      end)
-
-    # Build leaf index map for O(1) key lookup
-    leaf_index = build_leaf_index(leaves)
-
-    leaf_count = length(leaves)
-
-    # The index keys on the leaf key, so a key that repeats collapses two leaves
-    # into one entry. Comparing sizes catches that without a second pass; only the
-    # failing path pays to find out which key it was.
-    if map_size(leaf_index) != leaf_count do
-      raise_duplicate_key!(leaves)
-    end
-
-    # Hash the real leaves, then fill the bottom level out to a power of two with
-    # the padding leaf hash. Every padding slot holds the same value, so it is a
-    # constant the module works out at compile time rather than something to
-    # re-derive per slot. Padding slots need no key: the leaf index above is
-    # built from the real leaves and nothing looks a padding slot up by name.
-    padded_count = next_power_of_two(leaf_count)
-
-    leaf_hashes =
-      Enum.map(leaves, fn {_key, hash} -> hash_leaf(hash) end) ++
-        List.duplicate(@padding_leaf_hash, padded_count - leaf_count)
-
-    # Build the tree with all levels stored for fast proof generation
-    {root_hash, tree_levels} = build_levels_from_leaf_hashes(leaf_hashes)
-    tree_depth = calculate_depth(padded_count)
-
-    # Convert each level from list to tuple so proof generation can use elem/2
-    # for O(1) sibling access instead of Enum.at/2 which is O(n) on lists.
-    # One-time O(n) cost at construction; pays for itself on the first proof.
-    tuple_levels = Enum.map(tree_levels, &List.to_tuple/1)
-
-    %__MODULE__{
-      root_hash: root_hash,
-      leaves: leaves,
-      tree_depth: tree_depth,
-      tree_levels: tuple_levels,
-      leaf_index: leaf_index
-    }
-  end
-
-  def new(data, _opts) do
-    raise ArgumentError,
-          "Invalid input data. Expected a list of maps with \"key\" and \"hash\" keys, got: #{inspect(data, limit: 10)}"
-  end
+  defdelegate new(entries, opts \\ []), to: Tree
 
   @doc """
   Returns the root hash of the Merkle tree as a lowercase hex string.
@@ -799,10 +383,9 @@ defmodule Truestamp.Merkle do
 
   """
   @spec root(t()) :: binary()
-  def root(%__MODULE__{root_hash: root_hash}) do
-    # Encode binary root hash to hex string for external API
-    encode_hex(root_hash)
-  end
+  def root(%__MODULE__{root_hash: root_hash}), do: Hash.to_hex(root_hash)
+
+  # ── Proving an entry ──────────────────────────────────────────────────────
 
   @doc """
   Generates a Merkle proof for the given key.
@@ -833,12 +416,11 @@ defmodule Truestamp.Merkle do
 
   """
   @spec proof(t(), binary()) :: proof() | nil
-  def proof(%__MODULE__{leaf_index: leaf_index, tree_depth: depth, tree_levels: tree_levels}, key) do
-    # Hot path: an O(1) map lookup rather than a linear scan of the leaves.
-    # For a 50K-leaf tree that is one lookup per proof, not ~25K comparisons on average.
-    case Map.get(leaf_index, key) do
-      nil -> nil
-      index -> generate_proof_optimized(tree_levels, index, depth)
+  def proof(%__MODULE__{leaf_index: index, tree_depth: depth, tree_levels: levels}, key) do
+    # One map lookup finds the leaf, however large the tree.
+    case Map.fetch(index, key) do
+      {:ok, position} -> Path.steps(levels, position, depth)
+      :error -> nil
     end
   end
 
@@ -888,13 +470,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec walk(term(), term(), keyword()) :: {:ok, binary()} | {:error, walk_error()}
-  def walk(leaf_hex, steps, opts \\ []) do
-    max_steps = max_steps!(opts)
-
-    with {:ok, root} <- walk_to_root(leaf_hex, steps, max_steps) do
-      {:ok, encode_hex(root)}
-    end
-  end
+  defdelegate walk(leaf_hex, steps, opts \\ []), to: Path
 
   @doc """
   Verifies that `leaf_hex` is in the tree whose root is `root_hex`.
@@ -936,24 +512,171 @@ defmodule Truestamp.Merkle do
 
   """
   @spec verify(term(), term(), term(), keyword()) :: boolean()
-  def verify(leaf_hex, steps, root_hex, opts \\ []) do
-    max_steps = max_steps!(opts)
+  defdelegate verify(leaf_hex, steps, root_hex, opts \\ []), to: Path
 
-    with true <- hex_hash?(root_hex),
-         {:ok, root} <- walk_to_root(leaf_hex, steps, max_steps) do
-      # Constant-time comparison, kept as a matter of habit rather than because
-      # anything depends on it. The computed root, the expected root, the path and
-      # the leaf value are all public, so there is no secret for the comparison to
-      # leak and no timing channel to close. It costs nothing and keeps the door
-      # shut if a caller ever compares something that is not public. Both sides
-      # are 32 bytes here; :crypto.hash_equals/2 requires OTP 25 or newer.
-      :crypto.hash_equals(root, decode_hex(root_hex))
-    else
-      _refused -> false
-    end
-  end
+  # ── Building a tree incrementally ─────────────────────────────────────────
 
-  # ── Compact Proof Encoding ──────────────────────────────────────────
+  @doc """
+  Creates a new empty builder for incrementally constructing a Merkle tree.
+
+  ## Example
+
+      builder = Merkle.builder()
+      builder = Merkle.add_entry(builder, %{"key" => "entry1", "hash" => "abc..."})
+      tree = Merkle.finalize(builder)
+
+  """
+  @spec builder() :: Builder.t()
+  defdelegate builder(), to: Tree
+
+  @doc """
+  Adds a single entry to the builder.
+
+  Validates the entry and pre-computes its leaf hash. Entries are accumulated
+  for later finalization.
+
+  ## Duplicate Handling
+
+  - If both key AND hash match an entry already added → silently ignored (idempotent)
+  - If key exists with a different hash → raises `ArgumentError`
+
+  ## Example
+
+      builder = Merkle.builder()
+                |> Merkle.add_entry(%{"key" => "entry1", "hash" => "a1b2..."})
+                |> Merkle.add_entry(%{"key" => "entry2", "hash" => "c3d4..."})
+
+  """
+  @spec add_entry(Builder.t(), %{binary() => binary()}) :: Builder.t()
+  defdelegate add_entry(builder, entry), to: Tree
+
+  @doc """
+  Adds multiple entries from an enumerable to the builder.
+
+  This is a convenience wrapper that reduces over the enumerable,
+  calling `add_entry/2` for each element.
+
+  ## Example
+
+      entries = [
+        %{"key" => "entry1", "hash" => "a1b2..."},
+        %{"key" => "entry2", "hash" => "c3d4..."}
+      ]
+
+      builder = Merkle.builder() |> Merkle.add_entries(entries)
+      tree = Merkle.finalize(builder)
+
+  """
+  @spec add_entries(Builder.t(), Enumerable.t()) :: Builder.t()
+  defdelegate add_entries(builder, enumerable), to: Tree
+
+  @doc """
+  Finalizes the builder into a complete Merkle tree.
+
+  Sorts leaves by key (unless `sort: false`), pads to next power of 2,
+  and builds the full tree structure.
+
+  ## Options
+
+    * `:sort` (default: `true`) - When `true`, sorts leaves by key for
+      deterministic ordering. When `false`, preserves insertion order.
+
+  ## Example
+
+      tree = builder |> Merkle.finalize()
+      tree = builder |> Merkle.finalize(sort: false)
+
+      # The returned tree supports all standard operations
+      root = Merkle.root(tree)
+      proof = Merkle.proof(tree, "some-key")
+
+  """
+  @spec finalize(Builder.t(), keyword()) :: t()
+  defdelegate finalize(builder, opts \\ []), to: Tree
+
+  @doc """
+  Creates a Merkle tree from an enumerable using extractor functions.
+
+  This is the most flexible convenience wrapper - it works with any data type
+  by using the provided functions to extract keys and hashes.
+
+  **Performance note**: slower than `new/1`, by roughly a quarter at 100k entries and
+  by more than that as the count grows, because of the per-entry extractor calls and
+  the builder's duplicate detection. Use `new/1` when all entries are available upfront
+  and performance is critical. See `Merkle.Builder` docs for measured figures and how
+  much to trust them.
+
+  ## Options
+
+    * `:key_fn` (required) - Function to extract key from each element
+    * `:hash_fn` (required) - Function to extract hash from each element
+    * `:sort` (default: `true`) - Whether to sort by key
+
+  ## Examples
+
+      # From a list of structs
+      tree = records |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.digest)
+
+      # From a database stream
+      tree = Repo.stream(query)
+             |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.hash)
+
+      # Disable sorting for pre-sorted data
+      tree = sorted_records
+             |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.hash, sort: false)
+
+  """
+  @spec from_stream(Enumerable.t(), keyword()) :: t()
+  defdelegate from_stream(enumerable, opts), to: Tree
+
+  @doc """
+  Creates a Merkle tree from an enumerable of maps with "key" and "hash" fields.
+
+  This is the stream-equivalent of `new/1` - use it when your data is already
+  in the standard `%{"key" => ..., "hash" => ...}` format.
+
+  **Performance note**: this is the builder path with no conversion on top, so it
+  measures within a few percent of `builder + finalize`: close to `new/1` at 100k
+  entries and around 2.5x slower at a million, where the duplicate-detection map
+  starts to cost real time. Use `new/1` when all entries are available upfront and
+  performance is critical. See `Merkle.Builder` docs for measured figures and how
+  much to trust them.
+
+  ## Options
+
+    * `:sort` (default: `true`) - Whether to sort by key
+
+  ## Examples
+
+      tree = map_stream |> Merkle.from_maps()
+      tree = map_stream |> Merkle.from_maps(sort: false)
+
+  """
+  @spec from_maps(Enumerable.t(), keyword()) :: t()
+  defdelegate from_maps(enumerable, opts \\ []), to: Tree
+
+  @doc """
+  Creates a Merkle tree from an enumerable of `{key, hash}` tuples.
+
+  **Performance note**: the slowest of the three wrappers, around 1.5x `new/1` at
+  100k entries, because every tuple is turned into a map before the builder sees it.
+  Use `new/1` when all entries are available upfront and performance is critical. See
+  `Merkle.Builder` docs for measured figures and how much to trust them.
+
+  ## Options
+
+    * `:sort` (default: `true`) - Whether to sort by key
+
+  ## Examples
+
+      tree = [{id1, hash1}, {id2, hash2}] |> Merkle.from_tuples()
+      tree = tuple_stream |> Merkle.from_tuples(sort: false)
+
+  """
+  @spec from_tuples(Enumerable.t(), keyword()) :: t()
+  defdelegate from_tuples(enumerable, opts \\ []), to: Tree
+
+  # ── Storing a path ────────────────────────────────────────────────────────
 
   @doc """
   Encodes a path as the compact binary form used for storage.
@@ -1001,59 +724,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec steps_to_binary(proof()) :: binary()
-  def steps_to_binary([]), do: <<0::8>>
-
-  def steps_to_binary(proof_list) when is_list(proof_list) do
-    depth = length(proof_list)
-
-    if depth > @max_proof_depth do
-      raise ArgumentError,
-            "Invalid proof length. Expected at most #{@max_proof_depth} steps, got: #{depth}"
-    end
-
-    {direction_bits, hashes} =
-      proof_list
-      |> Enum.with_index()
-      |> Enum.reduce({0, <<>>}, fn {item, index}, {bits, hash_acc} ->
-        {bit, hex_hash} = encodable_proof_element!(item)
-        new_bits = Bitwise.bor(bits, Bitwise.bsl(bit, index))
-        hash_binary = Base.decode16!(hex_hash, case: :lower)
-        {new_bits, hash_acc <> hash_binary}
-      end)
-
-    bitfield_bytes = div(depth + 7, 8)
-    <<depth::8, direction_bits::little-size(bitfield_bytes * 8), hashes::binary>>
-  end
-
-  # Accept exactly what steps_from_binary/1 can produce: an "l:" or "r:" prefix
-  # followed by @expected_hash_hex_chars lowercase hex characters. Returns the
-  # direction bit and the hex hash, or raises for anything that would not survive
-  # the round trip.
-  defp encodable_proof_element!(
-         <<prefix::binary-size(2), hex_hash::binary-size(@expected_hash_hex_chars)>> = item
-       )
-       when prefix in ["l:", "r:"] do
-    unless lowercase_hex_binary?(hex_hash) do
-      raise ArgumentError,
-            "Invalid proof element hash. Expected #{@expected_hash_hex_chars} lowercase hex characters, got: #{inspect(item)}"
-    end
-
-    bit = if prefix == "r:", do: 1, else: 0
-    {bit, hex_hash}
-  end
-
-  defp encodable_proof_element!(invalid) do
-    raise ArgumentError,
-          ~s(Invalid proof element format. Expected "l:" or "r:" followed by #{@expected_hash_hex_chars} lowercase hex characters, got: #{inspect(invalid)})
-  end
-
-  defp lowercase_hex_binary?(<<>>), do: true
-
-  defp lowercase_hex_binary?(<<char, rest::binary>>)
-       when char in ?0..?9 or char in ?a..?f,
-       do: lowercase_hex_binary?(rest)
-
-  defp lowercase_hex_binary?(_), do: false
+  defdelegate steps_to_binary(steps), to: Codec
 
   @doc """
   Decodes the compact binary form back to a path of `l:` / `r:` steps.
@@ -1080,43 +751,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec steps_from_binary(binary()) :: {:ok, proof()} | {:error, term()}
-  def steps_from_binary(<<0::8>>), do: {:ok, []}
-
-  def steps_from_binary(<<depth::8, rest::binary>>)
-      when depth > 0 and depth <= @max_proof_depth do
-    bitfield_bytes = div(depth + 7, 8)
-    expected_hash_bytes = depth * 32
-
-    case rest do
-      <<direction_bits::little-size(^bitfield_bytes * 8),
-        hashes::binary-size(^expected_hash_bytes)>> ->
-        if Bitwise.bsr(direction_bits, depth) == 0 do
-          {:ok, decode_steps(depth, direction_bits, hashes)}
-        else
-          {:error, "Invalid proof binary: direction bits past depth #{depth} are set"}
-        end
-
-      _ ->
-        {:error,
-         "Invalid proof binary: expected #{bitfield_bytes + expected_hash_bytes} bytes after depth, got #{byte_size(rest)}"}
-    end
-  end
-
-  def steps_from_binary(<<depth::8, _rest::binary>>) when depth > @max_proof_depth do
-    {:error, "Proof depth #{depth} exceeds maximum #{@max_proof_depth}"}
-  end
-
-  def steps_from_binary(_), do: {:error, "Invalid proof binary format"}
-
-  defp decode_steps(depth, direction_bits, hashes) do
-    for i <- 0..(depth - 1) do
-      bit = Bitwise.band(Bitwise.bsr(direction_bits, i), 1)
-      direction = if bit == 1, do: "r", else: "l"
-      hash_binary = binary_part(hashes, i * 32, 32)
-      hex_hash = Base.encode16(hash_binary, case: :lower)
-      "#{direction}:#{hex_hash}"
-    end
-  end
+  defdelegate steps_from_binary(binary), to: Codec
 
   @doc """
   Encode a proof list to a base64url string (no padding).
@@ -1139,11 +774,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec encode_proof_base64(proof()) :: String.t()
-  def encode_proof_base64(proof_list) do
-    proof_list
-    |> steps_to_binary()
-    |> Base.url_encode64(padding: false)
-  end
+  defdelegate encode_proof_base64(steps), to: Codec
 
   @doc """
   Decodes a base64url-encoded compact path back to its steps.
@@ -1162,328 +793,5 @@ defmodule Truestamp.Merkle do
 
   """
   @spec decode_proof_base64(term()) :: {:ok, proof()} | {:error, term()}
-  def decode_proof_base64(base64_string) when is_binary(base64_string) do
-    # Base.url_decode64/2 ignores padding and the unused low bits of the last
-    # character, so several strings decode to one binary. Re-encoding and
-    # comparing keeps exactly one.
-    with {:ok, binary} <- Base.url_decode64(base64_string, padding: false),
-         ^base64_string <- Base.url_encode64(binary, padding: false) do
-      steps_from_binary(binary)
-    else
-      _ -> {:error, "Invalid base64url encoding"}
-    end
-  end
-
-  def decode_proof_base64(_not_a_binary), do: {:error, "Invalid base64url encoding"}
-
-  # Private helper functions
-
-  defp max_steps!(opts) when not is_list(opts) do
-    raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
-  end
-
-  defp max_steps!(opts) do
-    opts = Keyword.validate!(opts, max_steps: @max_proof_depth)
-
-    case opts[:max_steps] do
-      steps when is_integer(steps) and steps >= 0 and steps <= @max_proof_depth ->
-        steps
-
-      other ->
-        raise ArgumentError,
-              ":max_steps must be an integer from 0 to #{@max_proof_depth}, got: #{inspect(other)}"
-    end
-  end
-
-  # The walk shared by walk/3 and verify/4. Returns the raw 32-byte root.
-  defp walk_to_root(leaf_hex, steps, max_steps) do
-    with :ok <- check_leaf(leaf_hex),
-         :ok <- count_steps(steps, max_steps, 0),
-         {:ok, siblings} <- parse_steps(steps, []) do
-      {:ok, Enum.reduce(siblings, hash_leaf(leaf_hex), &apply_step/2)}
-    end
-  end
-
-  # A path presented FOR the padding constant is a path to a padding slot, not
-  # to a real entry. validate_hash!/1 refuses the constant on every construction
-  # surface, so no honest tree carries it as a real leaf and there is nothing
-  # legitimate to reject here. Applies to the leaf value only: the padding leaf
-  # hash (SHA-256(0x00 || this)) is a normal sibling in most padded paths and
-  # must keep walking, so parse_step/1 does not look for it.
-  defp check_leaf(@empty_leaf_hash_hex), do: {:error, :reserved_leaf}
-
-  defp check_leaf(leaf_hex) do
-    if hex_hash?(leaf_hex), do: :ok, else: {:error, :invalid_leaf}
-  end
-
-  # Counts no further than one step past the cap, so an oversized path is
-  # refused without reading it, whatever its length.
-  defp count_steps([], _max_steps, _count), do: :ok
-
-  defp count_steps([_ | _], max_steps, count) when count >= max_steps,
-    do: {:error, :too_many_steps}
-
-  defp count_steps([_ | rest], max_steps, count), do: count_steps(rest, max_steps, count + 1)
-  defp count_steps(_not_a_list, _max_steps, _count), do: {:error, :invalid_step}
-
-  defp parse_steps([], parsed), do: {:ok, Enum.reverse(parsed)}
-
-  defp parse_steps([step | rest], parsed) do
-    case parse_step(step) do
-      {:ok, sibling} -> parse_steps(rest, [sibling | parsed])
-      :error -> {:error, :invalid_step}
-    end
-  end
-
-  # "l:" or "r:" and exactly 64 lowercase hex characters, nothing more. The
-  # fixed width is what refuses a trailing newline and a bare hash.
-  defp parse_step(<<direction, ?:, sibling::binary-size(@expected_hash_hex_chars)>>)
-       when direction in [?l, ?r] do
-    if hex_chars?(sibling), do: {:ok, {direction, decode_hex(sibling)}}, else: :error
-  end
-
-  defp parse_step(_step), do: :error
-
-  defp apply_step({?l, sibling}, current), do: hash_internal(sibling, current)
-  defp apply_step({?r, sibling}, current), do: hash_internal(current, sibling)
-
-  # Exactly @expected_hash_hex_chars bytes, every one of them lowercase hex.
-  #
-  # Matching the head width first is what makes this exact. A regex ending in
-  # `$` would also accept a hash followed by a single newline, because that
-  # is what `$` means in PCRE, and the trailing byte then blows up in
-  # Base.decode16!/2 well past the point where the caller was promised a clean
-  # rejection. Walking the bytes is also several times faster than a sigil in a
-  # function body, which the compiler rebuilds on every call.
-  defp hex_hash?(<<hash::binary-size(@expected_hash_hex_chars)>>), do: hex_chars?(hash)
-  defp hex_hash?(_), do: false
-
-  defp hex_chars?(<<>>), do: true
-  defp hex_chars?(<<c, rest::binary>>) when c in ?0..?9 or c in ?a..?f, do: hex_chars?(rest)
-  defp hex_chars?(_), do: false
-
-  defp next_power_of_two(n) when n <= 1, do: 1
-
-  defp next_power_of_two(n) do
-    # Use integer bit operations to avoid floating-point precision issues
-    Bitwise.bsl(1, integer_log2_ceil(n))
-  end
-
-  defp calculate_depth(leaf_count) do
-    next_power = next_power_of_two(leaf_count)
-    # For powers of 2, trailing zeros count gives exact log2
-    depth = integer_log2(next_power)
-
-    # Validate depth doesn't exceed maximum
-    if depth > @max_tree_depth do
-      raise ArgumentError,
-            "Tree depth #{depth} exceeds maximum #{@max_tree_depth} (#{leaf_count} leaves)"
-    end
-
-    depth
-  end
-
-  # Exact integer log2 for powers of 2 (counts trailing zeros)
-  defp integer_log2(1), do: 0
-  defp integer_log2(n) when n > 0, do: integer_log2(Bitwise.bsr(n, 1)) + 1
-
-  # Ceiling of log2(n) using bit operations
-  defp integer_log2_ceil(n) when n <= 1, do: 0
-
-  defp integer_log2_ceil(n) do
-    # log2_ceil(n) = log2_floor(n-1) + 1
-    integer_log2_floor(n - 1) + 1
-  end
-
-  defp integer_log2_floor(1), do: 0
-  defp integer_log2_floor(n) when n > 1, do: integer_log2_floor(Bitwise.bsr(n, 1)) + 1
-
-  # Build every level bottom up from a full power-of-two row of leaf hashes,
-  # keeping each level for fast proof generation.
-  defp build_levels_from_leaf_hashes(leaf_hashes) do
-    levels = build_tree_levels(leaf_hashes, [leaf_hashes])
-    root_hash = levels |> List.last() |> List.first()
-    {root_hash, levels}
-  end
-
-  defp build_tree_levels([_root_hash], levels), do: Enum.reverse(levels)
-
-  defp build_tree_levels(hashes, levels) do
-    next_level =
-      hashes
-      |> Enum.chunk_every(2)
-      |> Enum.map(fn
-        [left, right] -> hash_internal(left, right)
-        # This should never happen due to power-of-2 padding - assert invariant
-        [_single] -> raise "Invalid tree level: odd number of nodes after padding"
-      end)
-
-    build_tree_levels(next_level, [next_level | levels])
-  end
-
-  # Build a map of {key => index} for O(1) leaf lookups during proof generation.
-  # The map is stored in the struct, which is what keeps proof/2 off a linear scan
-  # of the leaves list.
-  defp build_leaf_index(leaves) do
-    leaves
-    |> Enum.with_index()
-    |> Map.new(fn {{key, _hash}, index} -> {key, index} end)
-  end
-
-  # Called only once a size mismatch has proven a repeat exists, so the scan
-  # always halts on a key.
-  defp raise_duplicate_key!(leaves) do
-    key =
-      Enum.reduce_while(leaves, MapSet.new(), fn {key, _hash}, seen ->
-        if MapSet.member?(seen, key) do
-          {:halt, key}
-        else
-          {:cont, MapSet.put(seen, key)}
-        end
-      end)
-
-    raise ArgumentError,
-          "Duplicate key in input data: #{inspect(key)}. Every key must be unique."
-  end
-
-  defp generate_proof_optimized(tree_levels, target_index, depth) do
-    # Use pre-computed tree levels for O(log n) proof generation
-    generate_proof_path_optimized(tree_levels, target_index, depth, 0, [])
-  end
-
-  defp generate_proof_path_optimized(_tree_levels, _index, depth, current_level, proof)
-       when current_level >= depth do
-    Enum.reverse(proof)
-  end
-
-  defp generate_proof_path_optimized(tree_levels, index, depth, current_level, proof) do
-    # Enum.at/2 is O(depth) on the levels list, but depth is at most @max_tree_depth (40),
-    # so this is bounded and small. The element access below is the cost that matters.
-    level_hashes = Enum.at(tree_levels, current_level)
-
-    {sibling_index, direction} =
-      if rem(index, 2) == 0 do
-        {index + 1, "r"}
-      else
-        {index - 1, "l"}
-      end
-
-    # Hot path: levels are tuples, so elem/2 reaches a sibling in O(1). The bottom
-    # level can hold 65K+ elements (the next power of two above the leaf count),
-    # where walking a list would dominate the time spent generating a proof.
-    sibling_hash = elem(level_hashes, sibling_index)
-
-    # Move to next level
-    next_index = div(index, 2)
-    # Encode binary sibling_hash to hex for external proof string format
-    new_proof = ["#{direction}:#{encode_hex(sibling_hash)}" | proof]
-
-    generate_proof_path_optimized(tree_levels, next_index, depth, current_level + 1, new_proof)
-  end
-
-  # The 0x00 prefix keeps a leaf hash out of the interior-node domain, so an interior
-  # node can never be presented as a leaf
-  defp hash_leaf(hash) do
-    # Decode hex hash to binary before hashing for correct cryptographic operation
-    # Return binary for efficient internal operations
-    decoded_hash = decode_hex(hash)
-    :crypto.hash(:sha256, <<0x00>> <> decoded_hash)
-  end
-
-  # The 0x01 prefix keeps an interior hash out of the leaf domain, so a leaf can never
-  # be presented as an interior node
-  defp hash_internal(left_hash, right_hash) do
-    # Both inputs are binary from hash_leaf or previous hash_internal calls
-    # Return binary for efficient internal operations
-    :crypto.hash(:sha256, <<0x01>> <> left_hash <> right_hash)
-  end
-
-  # Standalone hex encoding helper (no external dependencies)
-  defp encode_hex(binary) do
-    Base.encode16(binary, case: :lower)
-  end
-
-  # Standalone hex decoding helper (no external dependencies)
-  defp decode_hex(hex_string) do
-    Base.decode16!(hex_string, case: :lower)
-  end
-
-  # Input validation helpers
-  defp validate_input_data!(data) do
-    Enum.each(data, &validate_input_entry!/1)
-  end
-
-  defp validate_input_entry!(%{"key" => key, "hash" => hash}) do
-    validate_key!(key)
-    validate_hash!(hash)
-  end
-
-  defp validate_input_entry!(invalid) do
-    raise ArgumentError,
-          "Invalid input entry format. Expected map with \"key\" and \"hash\" keys, got: #{inspect(invalid, limit: 10)}"
-  end
-
-  defp validate_key!(key) when is_binary(key) do
-    # Check length (max 36 characters)
-    if String.length(key) > 36 do
-      raise ArgumentError,
-            "Invalid key length. Expected maximum 36 characters, got: #{String.length(key)}"
-    end
-
-    # Check for leading/trailing spaces
-    trimmed = String.trim(key)
-
-    if trimmed != key do
-      raise ArgumentError,
-            "Invalid key format. Keys must not have leading or trailing spaces, got: #{inspect(key, limit: 10)}"
-    end
-
-    # Check character set: alphanumeric, hyphen, underscore, period only
-    if key == "" or not key_chars?(key) do
-      raise ArgumentError,
-            "Invalid key format. Expected alphanumeric characters with optional .-_ separators, got: #{inspect(key, limit: 10)}"
-    end
-
-    # Reject keys that could collide with internal padding prefix
-    if String.starts_with?(String.downcase(key), "__pad__") do
-      raise ArgumentError,
-            "Invalid key format. Keys must not use reserved padding prefix, got: #{inspect(key, limit: 10)}"
-    end
-  end
-
-  defp validate_key!(invalid) do
-    raise ArgumentError, "Invalid key type. Expected string, got: #{inspect(invalid, limit: 10)}"
-  end
-
-  # ASCII letters, digits, and the three separators. Byte-wise, so any
-  # multi-byte character fails on its lead byte.
-  defp key_chars?(<<>>), do: true
-
-  defp key_chars?(<<c, rest::binary>>)
-       when c in ?a..?z or c in ?A..?Z or c in ?0..?9 or c in [?., ?_, ?-],
-       do: key_chars?(rest)
-
-  defp key_chars?(_), do: false
-
-  defp validate_hash!(hash) when is_binary(hash) do
-    # Validate exactly @expected_hash_hex_chars (64) hex characters
-    # This enforces 32-byte hashes as defense-in-depth against second preimage attacks
-    unless hex_hash?(hash) do
-      raise ArgumentError,
-            "Invalid hash format. Expected #{@expected_hash_hex_chars}-character lowercase hex SHA-256 hash (#{@expected_hash_bytes} bytes), got: #{inspect(hash, limit: 10)}"
-    end
-
-    # Reject the reserved padding constant. A padded slot stands for this value,
-    # but construction splices the slot's leaf hash straight in and never routes
-    # the constant through here, so no honest tree can carry it as a real leaf.
-    # That invariant is what lets walk/3 and verify/4 refuse it outright.
-    if hash == @empty_leaf_hash_hex do
-      raise ArgumentError,
-            "Invalid hash. #{@empty_leaf_hash_hex} is the reserved Merkle padding constant and must not be used as an entry hash."
-    end
-  end
-
-  defp validate_hash!(invalid) do
-    raise ArgumentError, "Invalid hash type. Expected string, got: #{inspect(invalid, limit: 10)}"
-  end
+  defdelegate decode_proof_base64(text), to: Codec
 end
