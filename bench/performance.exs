@@ -48,7 +48,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
     entries = entries(1_000)
     tree = Merkle.new(entries)
     [%{"key" => key, "hash" => hash} | _] = entries
-    true = Merkle.verify(Merkle.proof(tree, key), Merkle.root(tree), hash)
+    true = Merkle.verify(hash, Merkle.proof(tree, key), Merkle.root(tree))
   end
 
   defp environment do
@@ -72,7 +72,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
 
     verify_us =
       isolated(fn ->
-        per_call_us(proofs, fn {proof, hash} -> true = Merkle.verify(proof, root, hash) end)
+        per_call_us(proofs, fn {proof, hash} -> true = Merkle.verify(hash, proof, root) end)
       end)
 
     {longest, _} = Enum.max_by(proofs, fn {proof, _} -> length(proof) end)

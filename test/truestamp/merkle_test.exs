@@ -121,8 +121,8 @@ defmodule Truestamp.MerkleTest do
       assert map_size(tree.leaf_index) == 2
 
       root = Merkle.root(tree)
-      assert Merkle.verify(Merkle.proof(tree, "key-a"), root, hash)
-      assert Merkle.verify(Merkle.proof(tree, "key-b"), root, hash)
+      assert Merkle.verify(hash, Merkle.proof(tree, "key-a"), root)
+      assert Merkle.verify(hash, Merkle.proof(tree, "key-b"), root)
     end
 
     test "every accepted leaf is provable" do
@@ -138,7 +138,7 @@ defmodule Truestamp.MerkleTest do
       root = Merkle.root(tree)
 
       for %{"key" => key, "hash" => hash} <- data do
-        assert Merkle.verify(Merkle.proof(tree, key), root, hash), "#{key} is not provable"
+        assert Merkle.verify(hash, Merkle.proof(tree, key), root), "#{key} is not provable"
       end
     end
 
@@ -533,7 +533,7 @@ defmodule Truestamp.MerkleTest do
     end
   end
 
-  describe "verify/3" do
+  describe "verify/4" do
     test "verifies proof for single element tree" do
       data = [
         %{
@@ -547,9 +547,9 @@ defmodule Truestamp.MerkleTest do
       root = Merkle.root(tree)
 
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == true
     end
 
@@ -559,9 +559,9 @@ defmodule Truestamp.MerkleTest do
       proof = Merkle.proof(tree, "test-key-1")
       root = Merkle.root(tree)
 
-      # verify/3 answers every invalid input with false, so a stray newline has
+      # verify/4 answers every invalid input with false, so a stray newline has
       # to be rejected rather than carried into the hashing path.
-      assert Merkle.verify(proof, root, hash <> "\n") == false
+      assert Merkle.verify(hash <> "\n", proof, root) == false
     end
 
     test "verifies proof for two element tree" do
@@ -583,15 +583,15 @@ defmodule Truestamp.MerkleTest do
       proof_b = Merkle.proof(tree, "test-key-b")
 
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof_a,
-               root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == true
 
       assert Merkle.verify(
+               "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof_b,
-               root,
-               "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == true
     end
 
@@ -621,7 +621,7 @@ defmodule Truestamp.MerkleTest do
       # Verify every entry
       Enum.each(data, fn %{"key" => key, "hash" => hash} ->
         proof = Merkle.proof(tree, key)
-        assert Merkle.verify(proof, root, hash) == true
+        assert Merkle.verify(hash, proof, root) == true
       end)
     end
 
@@ -639,9 +639,9 @@ defmodule Truestamp.MerkleTest do
       wrong_root = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               wrong_root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               wrong_root
              ) == false
     end
 
@@ -658,9 +658,9 @@ defmodule Truestamp.MerkleTest do
       root = Merkle.root(tree)
 
       assert Merkle.verify(
+               "aaa0012345678901234567890123456789012345678901234567890123456789",
                proof,
-               root,
-               "aaa0012345678901234567890123456789012345678901234567890123456789"
+               root
              ) == false
     end
 
@@ -677,9 +677,9 @@ defmodule Truestamp.MerkleTest do
       root = Merkle.root(tree)
 
       assert Merkle.verify(
+               "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               root,
-               "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == false
     end
 
@@ -711,9 +711,9 @@ defmodule Truestamp.MerkleTest do
         end
 
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                tampered_proof,
-               root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == false
     end
   end
@@ -863,15 +863,15 @@ defmodule Truestamp.MerkleTest do
 
       # Both should fail verification
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               wrong_root1,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               wrong_root1
              ) == false
 
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               wrong_root2,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               wrong_root2
              ) == false
 
       # The root comparison is constant-time by habit, not because a secret is
@@ -891,7 +891,7 @@ defmodule Truestamp.MerkleTest do
       hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
 
       # Should reject oversized proof
-      assert Merkle.verify(oversized_proof, root, hash) == false
+      assert Merkle.verify(hash, oversized_proof, root) == false
     end
 
     test "tree depth limit prevents integer overflow" do
@@ -936,26 +936,26 @@ defmodule Truestamp.MerkleTest do
 
       # Test invalid root hash (wrong length)
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               "invalid",
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               "invalid"
              ) == false
 
       # Test invalid leaf hash (wrong length)
-      assert Merkle.verify(proof, root, "invalid") == false
+      assert Merkle.verify("invalid", proof, root) == false
 
       # Test invalid root hash (non-hex characters)
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               "z1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               "z1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
              ) == false
 
       # Test invalid leaf hash (non-hex characters)
       assert Merkle.verify(
+               "z1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               root,
-               "z1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == false
     end
 
@@ -965,19 +965,19 @@ defmodule Truestamp.MerkleTest do
 
       # Proof element missing colon separator
       malformed_proof1 = ["l" <> hash]
-      assert Merkle.verify(malformed_proof1, root, hash) == false
+      assert Merkle.verify(hash, malformed_proof1, root) == false
 
       # Proof element with invalid direction
       malformed_proof2 = ["x:#{hash}"]
-      assert Merkle.verify(malformed_proof2, root, hash) == false
+      assert Merkle.verify(hash, malformed_proof2, root) == false
 
       # Proof element with invalid hash
       malformed_proof3 = ["l:invalid_hash"]
-      assert Merkle.verify(malformed_proof3, root, hash) == false
+      assert Merkle.verify(hash, malformed_proof3, root) == false
 
       # Proof element with wrong hash length
       malformed_proof4 = ["l:a1b2c3"]
-      assert Merkle.verify(malformed_proof4, root, hash) == false
+      assert Merkle.verify(hash, malformed_proof4, root) == false
     end
 
     test "empty leaf padding is cryptographically distinct" do
@@ -1034,9 +1034,9 @@ defmodule Truestamp.MerkleTest do
       hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
 
       # Non-list proof should be rejected
-      assert Merkle.verify("not a list", root, hash) == false
-      assert Merkle.verify(%{}, root, hash) == false
-      assert Merkle.verify(nil, root, hash) == false
+      assert Merkle.verify(hash, "not a list", root) == false
+      assert Merkle.verify(hash, %{}, root) == false
+      assert Merkle.verify(hash, nil, root) == false
     end
   end
 
@@ -1093,7 +1093,7 @@ defmodule Truestamp.MerkleTest do
       results =
         Enum.map(data, fn %{"key" => key, "hash" => hash} ->
           proof = Merkle.proof(tree, key)
-          Merkle.verify(proof, root, hash)
+          Merkle.verify(hash, proof, root)
         end)
 
       assert Enum.all?(results, &(&1 == true))
@@ -1151,9 +1151,9 @@ defmodule Truestamp.MerkleTest do
 
       # Verification should still work
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                normalized_proof,
-               root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              ) == true
     end
   end
@@ -1246,7 +1246,7 @@ defmodule Truestamp.MerkleTest do
         assert decoded_b64 == proof
 
         # Decoded proof still verifies
-        assert Merkle.verify(decoded, root, hash)
+        assert Merkle.verify(hash, decoded, root)
       end
     end
 
@@ -1360,7 +1360,7 @@ defmodule Truestamp.MerkleTest do
 
           assert {:ok, ^proof} = Merkle.decode_proof(Merkle.encode_proof(proof))
           assert {:ok, ^proof} = Merkle.decode_proof_base64(Merkle.encode_proof_base64(proof))
-          assert Merkle.verify(proof, root, hash)
+          assert Merkle.verify(hash, proof, root)
         end
       end
     end
@@ -1412,7 +1412,7 @@ defmodule Truestamp.MerkleTest do
         # Test proof verification for each key in the tree
         Enum.all?(unique_data, fn %{"key" => key, "hash" => hash} ->
           proof = Merkle.proof(tree, key)
-          Merkle.verify(proof, root_hash, hash)
+          Merkle.verify(hash, proof, root_hash)
         end)
       end
     end
@@ -1447,7 +1447,7 @@ defmodule Truestamp.MerkleTest do
           corrupted_proof = ["#{direction}:#{flipped_hash}" | rest]
 
           # Verification should fail with corrupted proof
-          refute Merkle.verify(corrupted_proof, root_hash, test_hash)
+          refute Merkle.verify(test_hash, corrupted_proof, root_hash)
         else
           # Single element tree - this is expected behavior
           true
@@ -1478,7 +1478,7 @@ defmodule Truestamp.MerkleTest do
             end)
 
           # Verification should fail with swapped directions
-          refute Merkle.verify(swapped_proof, root_hash, test_hash)
+          refute Merkle.verify(test_hash, swapped_proof, root_hash)
         else
           # Single element tree - this is expected behavior
           true
@@ -1504,7 +1504,7 @@ defmodule Truestamp.MerkleTest do
           truncated_proof = Enum.drop(proof, -1)
 
           # Verification should fail with truncated proof
-          refute Merkle.verify(truncated_proof, root_hash, test_hash)
+          refute Merkle.verify(test_hash, truncated_proof, root_hash)
         else
           # Too small to truncate meaningfully
           true
@@ -1583,7 +1583,7 @@ defmodule Truestamp.MerkleTest do
           # Verify all proofs work
           Enum.all?(data, fn %{"key" => key, "hash" => hash} ->
             proof = Merkle.proof(tree, key)
-            Merkle.verify(proof, root_hash, hash)
+            Merkle.verify(hash, proof, root_hash)
           end)
         end)
       end
@@ -1646,7 +1646,7 @@ defmodule Truestamp.MerkleTest do
         # Verify all real elements have valid proofs
         Enum.all?(data, fn %{"key" => key, "hash" => hash} ->
           proof = Merkle.proof(tree, key)
-          Merkle.verify(proof, root_hash, hash)
+          Merkle.verify(hash, proof, root_hash)
         end)
       end
     end
@@ -1672,7 +1672,7 @@ defmodule Truestamp.MerkleTest do
         # Tree structure should not collapse - each key should have a valid proof
         Enum.all?(data, fn %{"key" => key, "hash" => hash} ->
           proof = Merkle.proof(tree, key)
-          is_list(proof) and Merkle.verify(proof, root_hash, hash)
+          is_list(proof) and Merkle.verify(hash, proof, root_hash)
         end)
       end
     end
@@ -1725,7 +1725,7 @@ defmodule Truestamp.MerkleTest do
         proof1 = Merkle.proof(tree, entry1["key"])
 
         # The proof for the first entry must not verify the second entry's hash
-        not Merkle.verify(proof1, root, entry2["hash"])
+        not Merkle.verify(entry2["hash"], proof1, root)
       end
     end
 
@@ -1764,7 +1764,7 @@ defmodule Truestamp.MerkleTest do
           reversed_proof = Enum.reverse(proof)
 
           # Should fail unless proof is symmetric (rare edge case)
-          not Merkle.verify(reversed_proof, root, hash) or proof == reversed_proof
+          not Merkle.verify(hash, reversed_proof, root) or proof == reversed_proof
         else
           true
         end
@@ -1874,7 +1874,7 @@ defmodule Truestamp.MerkleTest do
         proof1 = Merkle.proof(tree1, key)
 
         # Should verify against tree2's root (they're equivalent)
-        Merkle.verify(proof1, root2, hash) and root1 == root2
+        Merkle.verify(hash, proof1, root2) and root1 == root2
       end
     end
 
@@ -1943,13 +1943,13 @@ defmodule Truestamp.MerkleTest do
 
         # Should be able to verify without tree, without key, without other data
         # Just proof + root + hash
-        result = Merkle.verify(proof, root, hash)
+        result = Merkle.verify(hash, proof, root)
 
         # Also verify that we get same result if we serialize/deserialize
         json_proof = JSON.encode!(proof)
         decoded_proof = JSON.decode!(json_proof)
 
-        result == Merkle.verify(decoded_proof, root, hash)
+        result == Merkle.verify(hash, decoded_proof, root)
       end
     end
   end
@@ -2139,15 +2139,15 @@ defmodule Truestamp.MerkleTest do
 
       # Proofs should verify correctly
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof_z,
-               root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              )
 
       assert Merkle.verify(
+               "b2c3d4e5f6789012345678901234567890123456789012345678901234567890",
                proof_a,
-               root,
-               "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
+               root
              )
     end
 
@@ -2403,7 +2403,7 @@ defmodule Truestamp.MerkleTest do
       assert walk_proof(forged, padding_constant()) == root
 
       # The library still refuses it, because the value being proved is reserved.
-      refute Merkle.verify(forged, root, padding_constant())
+      refute Merkle.verify(padding_constant(), forged, root)
     end
 
     test "the padding constant is refused as an entry hash on every construction surface" do
@@ -2431,7 +2431,7 @@ defmodule Truestamp.MerkleTest do
       # proved and nothing else, or most proofs from a padded tree stop verifying.
       assert ("r:" <> padding_leaf_hash()) in proof
 
-      assert Merkle.verify(proof, root, last_real_hash())
+      assert Merkle.verify(last_real_hash(), proof, root)
     end
   end
 
@@ -2758,9 +2758,9 @@ defmodule Truestamp.MerkleTest do
       root = Merkle.root(tree)
 
       assert Merkle.verify(
+               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
                proof,
-               root,
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+               root
              )
     end
 
@@ -3095,7 +3095,7 @@ defmodule Truestamp.MerkleTest do
 
         # All proofs must verify against the common root
         hash = Enum.find(map_data, &(&1["key"] == key))["hash"]
-        assert Merkle.verify(proof_new, root, hash), "proof verification failed for #{key}"
+        assert Merkle.verify(hash, proof_new, root), "proof verification failed for #{key}"
       end
     end
 
@@ -3452,8 +3452,8 @@ defmodule Truestamp.MerkleTest do
         assert proof_new == proof_tuples
 
         # Both proofs should verify against the shared root
-        assert Merkle.verify(proof_new, root, hash)
-        assert Merkle.verify(proof_tuples, root, hash)
+        assert Merkle.verify(hash, proof_new, root)
+        assert Merkle.verify(hash, proof_tuples, root)
       end
     end
   end

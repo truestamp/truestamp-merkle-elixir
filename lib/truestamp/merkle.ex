@@ -47,8 +47,9 @@ defmodule Truestamp.Merkle do
   `96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7`, and padding
   slots are placed by the tree, never by a caller. That value is therefore refused
   in both directions: `new/2` and the builder raise `ArgumentError` if you hand it
-  in as an entry hash, and `verify/3` returns `false` if you present it as the value
-  being proved, because such a proof proves a padding slot rather than an entry.
+  in as an entry hash, `walk/3` refuses it with `{:error, :reserved_leaf}`, and
+  `verify/4` returns `false` if you present it as the value being proved, because such
+  a proof proves a padding slot rather than an entry.
   The reservation covers the leaf value only. The padding leaf's *hash* appears as
   an ordinary sibling in most proofs from a padded tree and keeps verifying.
 
@@ -67,16 +68,18 @@ defmodule Truestamp.Merkle do
   - **Empty tree**: Root is `HASH("")`
 
   Hex is canonical lowercase throughout, on the way in and on the way out. Uppercase is
-  not a synonym for it: `new/2` raises `ArgumentError` on an uppercase hash, and
-  `verify/3` returns `false` for an uppercase root, leaf value, or proof sibling, which
-  looks exactly like a proof that does not check out. Hexdump tools commonly emit
-  uppercase, so downcase before handing anything over.
+  not a synonym for it: `new/2` raises `ArgumentError` on an uppercase hash, `walk/3`
+  refuses an uppercase leaf value or proof sibling, and `verify/4` returns `false` for
+  an uppercase root, leaf value, or proof sibling, which looks exactly like a proof that
+  does not check out. Hexdump tools commonly emit uppercase, so downcase before handing
+  anything over.
 
   ## Limits and Where They Apply
 
-  The 64-step proof cap is a real bound on work: it is what keeps `verify/3`,
+  The 64-step proof cap is a real bound on work: it is what keeps `walk/3`, `verify/4`,
   `decode_proof/1`, and `decode_proof_base64/1` cheap on bytes from a stranger. Those
-  three are the entry points safe to put in front of untrusted callers.
+  four are the entry points safe to put in front of untrusted callers, and `walk/3` and
+  `verify/4` take a lower cap through `:max_steps`.
 
   The tree depth cap of 40 is not that. It keeps the depth arithmetic in range, and a
   tree big enough to reach it holds about a trillion leaves, so memory is gone long
@@ -95,7 +98,7 @@ defmodule Truestamp.Merkle do
       "27fdfb0ec5b8a6cd13283e2c192d32ee5baee7aa4807e96287008f42598c51d1"
       iex> proof = Truestamp.Merkle.proof(tree, "entry-1")
       ["r:97de9286ff6aec3c2f718237f34f6062d515daf8ea863ed52b503ee4ad98444c"]
-      iex> Truestamp.Merkle.verify(proof, root_hash, "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678")
+      iex> Truestamp.Merkle.verify("a1b2c3d4e5f67890123456789012345678901234567890123456789012345678", proof, root_hash)
       true
       iex> single = [%{"key" => "single-entry", "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"}]
       iex> single_tree = Truestamp.Merkle.new(single)
@@ -227,7 +230,7 @@ defmodule Truestamp.Merkle do
 
       iex> proof = ["r:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"]
       iex> root = "96cfe136315282442cd0133b934dd99622a510c075930239725ced808ce7dfa0"
-      iex> Truestamp.Merkle.verify(proof, root, "2222222222222222222222222222222222222222222222222222222222222222")
+      iex> Truestamp.Merkle.verify("2222222222222222222222222222222222222222222222222222222222222222", proof, root)
       true
 
   ## API Summary
@@ -235,7 +238,8 @@ defmodule Truestamp.Merkle do
   - `new/2` - Create tree from a list of `%{"key" => ..., "hash" => ...}` entries
   - `root/1` - Get root hash as hex string
   - `proof/2` - Generate inclusion proof for key (returns `nil` if not found)
-  - `verify/3` - Verify proof against root hash (returns boolean)
+  - `walk/3` - Recompute the root an inclusion path implies (returns `{:ok, root}` or an error)
+  - `verify/4` - Check an inclusion path against a root hash (returns boolean)
   - `builder/0`, `add_entry/2`, `add_entries/2`, `finalize/2` - Streaming builder pattern
   - `from_stream/2`, `from_maps/2`, `from_tuples/2` - Convenience constructors
 
@@ -244,14 +248,17 @@ defmodule Truestamp.Merkle do
   - `new/2` raises `ArgumentError` for invalid keys, hashes, duplicate keys, excessive
     depth, or input that is not a list of entry maps
   - `proof/2` returns `nil` for non-existent keys
-  - `verify/3` never raises; it returns `false` for any invalid input or failed verification
+  - `walk/3` returns `{:ok, root}` or `{:error, reason}` for any input, and raises only for
+    invalid options
+  - `verify/4` returns `false` for any invalid input or failed verification, and raises
+    only for invalid options
   - `encode_proof/1` and `encode_proof_base64/1` return the encoded value directly and raise
     `ArgumentError` for a proof that would not survive the round trip
   - `decode_proof/1` and `decode_proof_base64/1` take untrusted bytes, so they return
     `{:ok, proof}` or `{:error, reason}` rather than raising
   """
 
-  # Longest proof verify/3 and decode_proof/1 will process, and so the ceiling on
+  # Longest proof walk/3, verify/4 and decode_proof/1 will process, and so the ceiling on
   # the hashing an untrusted proof can ask for. 64 steps spans a tree of
   # 2^64 = 18,446,744,073,709,551,616 leaves, past anything that could be built.
   @max_proof_depth 64
@@ -307,9 +314,11 @@ defmodule Truestamp.Merkle do
           leaf_index: %{binary() => non_neg_integer()}
         }
 
-  # Format: "direction:hash" where direction is "l" or "r"
+  # A step is "l:" or "r:" followed by the sibling's 64 lowercase hex characters.
   @type proof_step :: binary()
   @type proof :: [proof_step()]
+
+  @type walk_error :: :invalid_leaf | :reserved_leaf | :too_many_steps | :invalid_step
 
   # ============================================================================
   # Builder API Functions
@@ -644,7 +653,7 @@ defmodule Truestamp.Merkle do
   `new([])` builds the empty tree, whose root is `SHA256("")`.
   `finalize/2` on a builder that was never fed returns the same tree. That root is not
   the leaf hash of anything, so no inclusion proof can verify against it: a `false`
-  from `verify/3` against an empty tree's root is the right answer rather than a fault.
+  from `verify/4` against an empty tree's root is the right answer rather than a fault.
 
   **Important**: The "hash" value must be a pre-computed SHA-256 digest of your source data,
   not the raw data itself. This allows the Merkle tree to operate on existing cryptographic
@@ -832,73 +841,115 @@ defmodule Truestamp.Merkle do
   end
 
   @doc """
-  Verifies a Merkle proof against a root hash.
+  Walks an inclusion path from a leaf value up to the root it implies.
 
-  Takes a proof, the expected root hash, and the hash value (pre-computed SHA-256 digest).
-  Returns true if the proof is valid, false otherwise.
+  `leaf_hex` is the value being proved: the 64-character lowercase hex digest the
+  entry carried when the tree was built. `steps` is the path `proof/2` returns, bottom
+  to top. Each step is `l:` or `r:` followed by the sibling's 64 lowercase hex
+  characters, where `l` puts the sibling on the left of the running hash and `r` on
+  the right. The walk hashes the leaf as `SHA-256(0x00 || leaf)`, combines it with
+  each sibling as `SHA-256(0x01 || left || right)`, and returns the hash it ends on.
 
-  **Parameters**:
-  - `proof`: List of proof steps in "direction:hash" format
-  - `root_hash`: Expected root hash as a 64-character lowercase hex string
-  - `hash`: Pre-computed SHA-256 digest as a 64-character lowercase hex string
-    (same value used in tree creation)
+  It is never given a root. Compare the result with a root you already trust, or call
+  `verify/4`, which does that in constant time.
 
-  Every hash here is lowercase hex only, proof siblings included. Uppercase input is
-  rejected as malformed, which surfaces as `false` and is indistinguishable from a
-  proof that genuinely fails. If a hash reaches you in uppercase, downcase it before
-  calling rather than reading the `false` as a cryptographic result.
+  ## Options
 
-  **Security Features**:
-  - Validates all inputs before processing (prevents crashes from malformed data)
-  - Caps the proof at #{@max_proof_depth} steps, so the work an untrusted proof can
-    ask for is bounded
-  - Compares the root in constant time
-  - Refuses the reserved padding constant `#{@empty_leaf_hash_hex}` as a leaf value.
-    Padding slots are placed by the tree, never by a caller, so a proof presented for
-    that value proves a padding slot rather than one of your entries. Only the value
-    being proved is refused; the padding leaf's hash remains a valid proof sibling.
+    * `:max_steps` - the longest path accepted, an integer from 0 to #{@max_proof_depth}.
+      Defaults to #{@max_proof_depth}.
+
+  An unknown option, or a `:max_steps` outside that range, raises `ArgumentError`.
+  Everything else may come from a stranger, so it is refused with an error instead of
+  raising. The checks run in this order:
+
+    * `{:error, :invalid_leaf}` - `leaf_hex` is not exactly 64 lowercase hex characters.
+    * `{:error, :reserved_leaf}` - `leaf_hex` is the reserved padding value
+      `#{@empty_leaf_hash_hex}`. A path from it proves a padding slot, not an entry.
+    * `{:error, :too_many_steps}` - `steps` holds more than `:max_steps` steps. The path
+      is refused before any step is read, so the work a path can ask for is bounded.
+    * `{:error, :invalid_step}` - `steps` is not a proper list, or a step is anything
+      other than `l:` or `r:` and exactly 64 lowercase hex characters. Uppercase hex, a
+      trailing newline and a bare hash without its direction are all refused.
 
   ## Examples
 
-      iex> # Verify proof for single-element tree (empty proof)
+      iex> leaf = "2222222222222222222222222222222222222222222222222222222222222222"
+      iex> steps = ["r:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"]
+      iex> Truestamp.Merkle.walk(leaf, steps)
+      {:ok, "96cfe136315282442cd0133b934dd99622a510c075930239725ced808ce7dfa0"}
+      iex> Truestamp.Merkle.walk(leaf, steps, max_steps: 0)
+      {:error, :too_many_steps}
+      iex> Truestamp.Merkle.walk(leaf, ["R:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"])
+      {:error, :invalid_step}
+      iex> Truestamp.Merkle.walk(String.duplicate("A", 64), steps)
+      {:error, :invalid_leaf}
+
+  """
+  @spec walk(term(), term(), keyword()) :: {:ok, binary()} | {:error, walk_error()}
+  def walk(leaf_hex, steps, opts \\ []) do
+    max_steps = max_steps!(opts)
+
+    with {:ok, root} <- walk_to_root(leaf_hex, steps, max_steps) do
+      {:ok, encode_hex(root)}
+    end
+  end
+
+  @doc """
+  Verifies that `leaf_hex` is in the tree whose root is `root_hex`.
+
+  Walks `steps` from `leaf_hex` exactly as `walk/3` does, with the same options, and
+  compares the hash it ends on with `root_hex` in constant time. Returns `true` only
+  when the walk succeeds and the two roots are equal.
+
+  Every refusal `walk/3` reports, and a `root_hex` that is not 64 lowercase hex
+  characters, returns `false`. That is indistinguishable from a path that genuinely
+  fails, so call `walk/3` to learn which check refused it. If a hash reaches you in
+  uppercase, downcase it first rather than reading the `false` as a cryptographic
+  result. Only invalid options raise.
+
+  The reserved padding value is refused as `leaf_hex` because padding slots are placed
+  by the tree, never by a caller, so a path from it proves a padding slot rather than
+  one of your entries. The padding leaf's hash remains a valid sibling in a path.
+
+  ## Examples
+
       iex> data = [%{"key" => "entry", "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}]
       iex> tree = Truestamp.Merkle.new(data)
-      iex> proof = Truestamp.Merkle.proof(tree, "entry")
-      iex> proof
+      iex> steps = Truestamp.Merkle.proof(tree, "entry")
+      iex> steps
       []
-      iex> root = Truestamp.Merkle.root(tree)
-      iex> Truestamp.Merkle.verify(proof, root, "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678")
+      iex> Truestamp.Merkle.verify("a1b2c3d4e5f67890123456789012345678901234567890123456789012345678", steps, Truestamp.Merkle.root(tree))
       true
       iex>
-      iex> # Verify proof for two-element tree
       iex> data2 = [
       ...>   %{"key" => "entry-a", "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"},
       ...>   %{"key" => "entry-b", "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}
       ...> ]
       iex> tree2 = Truestamp.Merkle.new(data2)
-      iex> proof2 = Truestamp.Merkle.proof(tree2, "entry-a")
-      iex> root2 = Truestamp.Merkle.root(tree2)
-      iex> Truestamp.Merkle.verify(proof2, root2, "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678")
+      iex> steps2 = Truestamp.Merkle.proof(tree2, "entry-a")
+      iex> Truestamp.Merkle.verify("a1b2c3d4e5f67890123456789012345678901234567890123456789012345678", steps2, Truestamp.Merkle.root(tree2))
       true
+      iex> Truestamp.Merkle.verify("b1b2c3d4e5f67890123456789012345678901234567890123456789012345678", steps2, Truestamp.Merkle.root(tree2))
+      false
 
   """
-  @spec verify(proof(), binary(), binary()) :: boolean()
-  def verify(proof, root_hash, hash) when is_list(proof) do
-    # Comprehensive input validation - returns false for any invalid input
-    with :ok <- validate_proof_size(proof),
-         :ok <- validate_hex_hash(root_hash),
-         :ok <- validate_hex_hash(hash),
-         :ok <- reject_reserved_leaf(hash),
-         :ok <- validate_proof_format(proof) do
-      # All inputs valid - proceed with verification
-      perform_verification(proof, root_hash, hash)
+  @spec verify(term(), term(), term(), keyword()) :: boolean()
+  def verify(leaf_hex, steps, root_hex, opts \\ []) do
+    max_steps = max_steps!(opts)
+
+    with true <- hex_hash?(root_hex),
+         {:ok, root} <- walk_to_root(leaf_hex, steps, max_steps) do
+      # Constant-time comparison, kept as a matter of habit rather than because
+      # anything depends on it. The computed root, the expected root, the path and
+      # the leaf value are all public, so there is no secret for the comparison to
+      # leak and no timing channel to close. It costs nothing and keeps the door
+      # shut if a caller ever compares something that is not public. Both sides
+      # are 32 bytes here; :crypto.hash_equals/2 requires OTP 25 or newer.
+      :crypto.hash_equals(root, decode_hex(root_hex))
     else
-      {:error, _reason} -> false
+      _refused -> false
     end
   end
-
-  # Catch-all for non-list proof inputs
-  def verify(_proof, _root_hash, _hash), do: false
 
   # ── Compact Proof Encoding ──────────────────────────────────────────
 
@@ -1096,58 +1147,74 @@ defmodule Truestamp.Merkle do
 
   # Private helper functions
 
-  defp perform_verification(proof, root_hash, hash) do
-    # Start with the leaf hash (returns binary)
-    leaf_hash = hash_leaf(hash)
-
-    # Follow the proof path to reconstruct the root
-    computed_root =
-      Enum.reduce(proof, leaf_hash, fn proof_step, current_hash ->
-        [direction, sibling_hash] = String.split(proof_step, ":", parts: 2)
-        # Decode hex sibling_hash to binary for hash_internal
-        sibling_binary = decode_hex(sibling_hash)
-
-        case direction do
-          "l" -> hash_internal(sibling_binary, current_hash)
-          "r" -> hash_internal(current_hash, sibling_binary)
-        end
-      end)
-
-    # Constant-time comparison, kept as a matter of habit rather than because
-    # anything depends on it. The computed root, the expected root, the proof and
-    # the leaf value are all public, so there is no secret for the comparison to
-    # leak and no timing channel to close. It costs nothing and keeps the door shut
-    # if a caller ever compares something that is not public.
-    constant_time_compare(computed_root, decode_hex(root_hash))
+  defp max_steps!(opts) when not is_list(opts) do
+    raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
   end
 
-  # :crypto.hash_equals/2 requires OTP 25 or newer.
-  defp constant_time_compare(a, b) when byte_size(a) == byte_size(b) do
-    :crypto.hash_equals(a, b)
-  end
+  defp max_steps!(opts) do
+    opts = Keyword.validate!(opts, max_steps: @max_proof_depth)
 
-  defp constant_time_compare(_a, _b), do: false
+    case opts[:max_steps] do
+      steps when is_integer(steps) and steps >= 0 and steps <= @max_proof_depth ->
+        steps
 
-  # Bound the hashing a proof from an untrusted source can ask verify/3 to do.
-  defp validate_proof_size(proof) when is_list(proof) do
-    if length(proof) > @max_proof_depth do
-      {:error, "Proof exceeds maximum depth of #{@max_proof_depth}"}
-    else
-      :ok
+      other ->
+        raise ArgumentError,
+              ":max_steps must be an integer from 0 to #{@max_proof_depth}, got: #{inspect(other)}"
     end
   end
 
-  # Validate hex hash format - must be exactly @expected_hash_hex_chars (64) lowercase hex chars
-  # This enforces 32-byte hashes at verification time as defense-in-depth against second preimage attacks
-  defp validate_hex_hash(hash) when is_binary(hash) do
-    if hex_hash?(hash) do
-      :ok
-    else
-      {:error, "Invalid hash format"}
+  # The walk shared by walk/3 and verify/4. Returns the raw 32-byte root.
+  defp walk_to_root(leaf_hex, steps, max_steps) do
+    with :ok <- check_leaf(leaf_hex),
+         :ok <- count_steps(steps, max_steps, 0),
+         {:ok, siblings} <- parse_steps(steps, []) do
+      {:ok, Enum.reduce(siblings, hash_leaf(leaf_hex), &apply_step/2)}
     end
   end
 
-  defp validate_hex_hash(_), do: {:error, "Hash must be a string"}
+  # A path presented FOR the padding constant is a path to a padding slot, not
+  # to a real entry. validate_hash!/1 refuses the constant on every construction
+  # surface, so no honest tree carries it as a real leaf and there is nothing
+  # legitimate to reject here. Applies to the leaf value only: the padding leaf
+  # hash (SHA-256(0x00 || this)) is a normal sibling in most padded paths and
+  # must keep walking, so parse_step/1 does not look for it.
+  defp check_leaf(@empty_leaf_hash_hex), do: {:error, :reserved_leaf}
+
+  defp check_leaf(leaf_hex) do
+    if hex_hash?(leaf_hex), do: :ok, else: {:error, :invalid_leaf}
+  end
+
+  # Counts no further than one step past the cap, so an oversized path is
+  # refused without reading it, whatever its length.
+  defp count_steps([], _max_steps, _count), do: :ok
+
+  defp count_steps([_ | _], max_steps, count) when count >= max_steps,
+    do: {:error, :too_many_steps}
+
+  defp count_steps([_ | rest], max_steps, count), do: count_steps(rest, max_steps, count + 1)
+  defp count_steps(_not_a_list, _max_steps, _count), do: {:error, :invalid_step}
+
+  defp parse_steps([], parsed), do: {:ok, Enum.reverse(parsed)}
+
+  defp parse_steps([step | rest], parsed) do
+    case parse_step(step) do
+      {:ok, sibling} -> parse_steps(rest, [sibling | parsed])
+      :error -> {:error, :invalid_step}
+    end
+  end
+
+  # "l:" or "r:" and exactly 64 lowercase hex characters, nothing more. The
+  # fixed width is what refuses a trailing newline and a bare hash.
+  defp parse_step(<<direction, ?:, sibling::binary-size(@expected_hash_hex_chars)>>)
+       when direction in [?l, ?r] do
+    if hex_chars?(sibling), do: {:ok, {direction, decode_hex(sibling)}}, else: :error
+  end
+
+  defp parse_step(_step), do: :error
+
+  defp apply_step({?l, sibling}, current), do: hash_internal(sibling, current)
+  defp apply_step({?r, sibling}, current), do: hash_internal(current, sibling)
 
   # Exactly @expected_hash_hex_chars bytes, every one of them lowercase hex.
   #
@@ -1163,38 +1230,6 @@ defmodule Truestamp.Merkle do
   defp hex_chars?(<<>>), do: true
   defp hex_chars?(<<c, rest::binary>>) when c in ?0..?9 or c in ?a..?f, do: hex_chars?(rest)
   defp hex_chars?(_), do: false
-
-  # A proof presented FOR the padding constant is a proof of a padding slot, not
-  # of a real entry. validate_hash!/1 refuses the constant on every construction
-  # surface, so no honest tree carries it as a real leaf and there is nothing
-  # legitimate to reject here. Applies to the leaf value only: the padding leaf
-  # hash (SHA-256(0x00 || this)) is a normal sibling in most padded proofs and
-  # must keep verifying, so validate_proof_element/1 is deliberately untouched.
-  defp reject_reserved_leaf(@empty_leaf_hash_hex), do: {:error, "Reserved padding constant"}
-  defp reject_reserved_leaf(_), do: :ok
-
-  # Validate proof format - each element must be "direction:hash"
-  defp validate_proof_format(proof) when is_list(proof) do
-    Enum.reduce_while(proof, :ok, fn item, _acc ->
-      case validate_proof_element(item) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
-    end)
-  end
-
-  # Validate individual proof element format
-  defp validate_proof_element(item) when is_binary(item) do
-    case String.split(item, ":", parts: 2) do
-      [direction, hash] when direction in ["l", "r"] ->
-        validate_hex_hash(hash)
-
-      _ ->
-        {:error, "Invalid proof element format"}
-    end
-  end
-
-  defp validate_proof_element(_), do: {:error, "Proof element must be a string"}
 
   defp next_power_of_two(n) when n <= 1, do: 1
 
@@ -1410,7 +1445,7 @@ defmodule Truestamp.Merkle do
     # Reject the reserved padding constant. A padded slot stands for this value,
     # but construction splices the slot's leaf hash straight in and never routes
     # the constant through here, so no honest tree can carry it as a real leaf.
-    # That invariant is what lets verify/3 refuse it outright.
+    # That invariant is what lets walk/3 and verify/4 refuse it outright.
     if hash == @empty_leaf_hash_hex do
       raise ArgumentError,
             "Invalid hash. #{@empty_leaf_hash_hex} is the reserved Merkle padding constant and must not be used as an entry hash."

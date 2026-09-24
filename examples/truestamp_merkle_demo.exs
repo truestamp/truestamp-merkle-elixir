@@ -94,7 +94,7 @@ defmodule TruestampMerkleDemo do
 
     Enum.each(data, fn %{"key" => key, "hash" => hash} ->
       proof = Merkle.proof(tree, key)
-      valid = Merkle.verify(proof, root, hash)
+      valid = Merkle.verify(hash, proof, root)
 
       IO.puts("#{key}: proof size #{length(proof)}, valid: #{valid}")
     end)
@@ -141,16 +141,16 @@ defmodule TruestampMerkleDemo do
 
     original_valid =
       Merkle.verify(
+        "aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888",
         proof,
-        root,
-        "aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888"
+        root
       )
 
     roundtrip_valid =
       Merkle.verify(
+        "aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888",
         normalized_proof,
-        root,
-        "aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888"
+        root
       )
 
     IO.puts("\nVerification results:")
@@ -478,7 +478,7 @@ defmodule TruestampMerkleDemo do
 
       {verify_time, result} =
         :timer.tc(fn ->
-          Merkle.verify(proof, root, random_hash)
+          Merkle.verify(random_hash, proof, root)
         end)
 
       verify_ms = verify_time / 1000

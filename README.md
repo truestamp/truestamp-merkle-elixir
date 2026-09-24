@@ -13,8 +13,8 @@ records on public blockchains bind those roots. The construction rules are there
 frozen: changing one would change roots that are already on chain.
 
 **Status:** 0.1.0, not yet published to Hex. This README is a draft of the contract. It
-is complete for how a tree is built; the proof encoding is added when the path walker
-lands.
+is complete for how a tree is built; how a path is walked and stored is added with the
+step codec.
 
 ## The tree contract (draft)
 
@@ -99,18 +99,17 @@ three builds, and the proof and verify times are means over up to 10,000 random 
 
 | Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 1,000 | 10 | 1.7 ms | 574,383/s | 273.1 KB | 2.2 us | 11.8 us | 323 B |
-| 10,000 | 14 | 18.9 ms | 529,073/s | 3.0 MB | 3.0 us | 15.4 us | 451 B |
-| 100,000 | 17 | 308.7 ms | 323,977/s | 28.4 MB | 5.2 us | 19.8 us | 548 B |
+| 1,000 | 10 | 1.7 ms | 587,199/s | 273.1 KB | 2.2 us | 8.9 us | 323 B |
+| 10,000 | 14 | 18.9 ms | 528,569/s | 3.0 MB | 3.0 us | 11.7 us | 451 B |
+| 100,000 | 17 | 295.4 ms | 338,510/s | 28.4 MB | 4.9 us | 14.6 us | 548 B |
 
 - **Build rate** falls as the tree grows, from over 500,000 entries a second at 10,000
-  entries to about 320,000 at 100,000.
+  entries to about 340,000 at 100,000.
 - **Proofs** hold one sibling per level, so their time and size grow with the depth, the
   base-2 logarithm of the padded entry count. Proof size is the compact binary form: a
   depth byte, the direction bits, and 32 bytes per step.
 - **Verification** checks the format of every value it is given and hashes once per step,
-  so it costs more than producing a proof, and stays under 20 microseconds at 100,000
-  entries.
+  so it costs more than producing a proof: about 15 microseconds at 100,000 entries.
 - **Tree memory** is the finished tree's heap size, counting a shared term once: about
   300 bytes per entry. Padding adds to it: 10,000 entries pad to 16,384 leaves, and every
   level above them is sized for 16,384. Building needs more than this while the input,

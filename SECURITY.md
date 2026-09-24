@@ -17,7 +17,8 @@ Do not open a public GitHub issue for a security report. Use one of these privat
 
 1. **GitHub private vulnerability report** (preferred), at
    <https://github.com/truestamp/truestamp-merkle-elixir/security/advisories/new>.
-2. **Email** to <security@truestamp.com>, with "truestamp-merkle-elixir" in the subject line.
+2. **Email** to <security@truestamp.com>, with "truestamp-merkle-elixir" in the subject
+   line.
 
 Include a minimal reproduction where you can: the entries, the proof and the root, and what
 you expected to happen. Only the latest commit on `main` is supported.
@@ -30,9 +31,10 @@ An inclusion proof is a claim about one 32-byte value and one root:
 
 That is the whole claim. It establishes existence (the value was present when the tree
 was built) and integrity (change one bit of the value, or one bit of any sibling on the
-path, and the recomputed root no longer matches). `verify/3` recomputes the root from the
+path, and the recomputed root no longer matches). `verify/4` recomputes the root from the
 leaf value and the proof's siblings and compares it against the root you supplied, so the
-proof is only as meaningful as your confidence in that root.
+proof is only as meaningful as your confidence in that root. `walk/3` recomputes the same
+root and hands it back without being given one.
 
 Root distribution is outside this library. A proof and a root obtained from the same
 party in the same response prove nothing about that party's honesty: they can build a
@@ -66,12 +68,13 @@ over time has to be built around the roots by the caller. Truestamp gets it from
 hash chain and the public blockchain commitments.
 
 **Not any binding between a key and a hash.** This is the one most likely to be assumed.
-`verify/3` takes a proof, a root, and a leaf hash. There is no key argument, and there is
-no place to put one. `proof/2` takes a key, but only to look up which leaf position to
-walk from; the key is never hashed into a leaf, an interior node, or the root. Keys affect
-leaf *order* (the default `sort: true` orders leaves by key, and a different order gives a
-different root) and they are checked for uniqueness at construction, but no proof ever
-carries evidence about which key a leaf was filed under.
+`verify/4` takes a leaf hash, a proof and a root, and `walk/3` a leaf hash and a proof.
+There is no key argument, and there is no place to put one. `proof/2` takes a key, but
+only to look up which leaf position to walk from; the key is never hashed into a leaf, an
+interior node, or the root. Keys affect leaf *order* (the default `sort: true` orders
+leaves by key, and a different order gives a different root) and they are checked for
+uniqueness at construction, but no proof ever carries evidence about which key a leaf was
+filed under.
 
 So a valid proof for hash `H` under root `R` says exactly that `H` was in that tree. It
 does not say `H` belonged to record 42, or to account X, or to a document with a given
@@ -117,14 +120,15 @@ likewise specific to this library.
 Every hash crossing the API is exactly 64 lowercase hex characters, on the way in and on
 the way out: the digests you supply for entries, the root hashes you get back, leaf values,
 and proof siblings alike. Non-canonical input is refused, never normalized. `new/2` and the
-builder raise `ArgumentError`; `verify/3` returns `false`.
+builder raise `ArgumentError`; `walk/3` returns an error and `verify/4` returns `false`.
 
 Refusing rather than downcasing is deliberate. Two spellings of the same hash would be
 two distinct leaves in the leaf index and two distinct byte strings on the wire, and a
 library that quietly accepts both invites a caller to believe the spelling does not
-matter. The cost is that an uppercase hash produces a `false` from `verify/3` that looks
-exactly like a proof that does not check out. Hexdump tools commonly emit uppercase, so
-downcase before calling rather than reading that `false` as a cryptographic result.
+matter. The cost is that an uppercase hash produces a `false` from `verify/4` that looks
+exactly like a proof that does not check out; `walk/3` names the refusal instead. Hexdump
+tools commonly emit uppercase, so downcase before calling rather than reading that `false`
+as a cryptographic result.
 
 The validators walk the bytes rather than matching a regular expression. That is faster,
 and it closed a real hole: PCRE's `$` matches before a trailing newline, so a 64-hex hash
@@ -151,8 +155,8 @@ the leaf index, so `proof/2` will not emit a proof for one.
 
 `PADHASH` is refused on both ends. `validate_hash!/1` raises `ArgumentError` on it, which
 covers every construction surface (`new/2`, `add_entry/2`, `add_entries/2`, `from_stream/2`,
-`from_maps/2`, `from_tuples/2`), and `verify/3` returns `false` when it is presented as the
-value being proved.
+`from_maps/2`, `from_tuples/2`). `walk/3` returns `{:error, :reserved_leaf}` and `verify/4`
+returns `false` when it is presented as the value being proved.
 
 Both halves are needed. The attack is cheap and requires no cryptography: whoever owns the
 last real leaf of a padded tree can assemble a complete, valid path for a padding slot out
@@ -214,13 +218,17 @@ inference, since a caller can no longer make a real leaf hash to the padding con
 
 ## Bounds, limits, and which entry points face untrusted input
 
-`verify/3`, `decode_proof/1`, and `decode_proof_base64/1` are the entry points safe to put
-in front of untrusted callers. All three cap the proof at 64 steps before doing any work,
-which is the real bound on the hashing a stranger's bytes can ask for. `verify/3` never
-raises: it validates size, root format, leaf format, the reserved constant, and every
-proof element before hashing anything, and returns `false` for all of them. The decoders
-return `{:ok, proof}` or `{:error, reason}`. A 64-step proof spans a tree of 2^64 leaves,
-past anything that could be built, so the cap costs no legitimate proof.
+`walk/3`, `verify/4`, `decode_proof/1`, and `decode_proof_base64/1` are the entry points
+safe to put in front of untrusted callers. All four cap the proof at 64 steps before
+hashing anything, which is the real bound on the hashing a stranger's bytes can ask for,
+and `walk/3` and `verify/4` accept a lower cap through `:max_steps` (Truestamp passes 32).
+`walk/3` and `verify/4` never raise on their input: each validates the leaf format, the
+reserved constant, the step count (counting no further than one past the cap), and every
+step before hashing anything. `walk/3` returns `{:ok, root}` or an `{:error, reason}`
+naming the check that refused, and `verify/4`, which also checks the root's format,
+returns `false` for all of them. Only an invalid option raises. The decoders return
+`{:ok, proof}` or `{:error, reason}`. A 64-step proof spans a tree of 2^64 leaves, past
+anything that could be built, so the cap costs no legitimate proof.
 
 `encode_proof/1` and `encode_proof_base64/1` raise `ArgumentError` on input that would not
 survive the round trip. They are for proofs you produced, not for bytes from a stranger.

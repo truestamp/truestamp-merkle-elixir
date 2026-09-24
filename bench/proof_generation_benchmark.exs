@@ -96,7 +96,7 @@ defmodule ProofGenerationBenchmark do
     all_valid =
       Enum.all?(verification_sample, fn {proof, key} ->
         hash = Enum.find(data, fn %{"key" => k} -> k == key end)["hash"]
-        Merkle.verify(proof, root, hash)
+        Merkle.verify(hash, proof, root)
       end)
 
     IO.puts("    Sample verification: #{if all_valid, do: "✅ All valid", else: "❌ Some invalid"}")
