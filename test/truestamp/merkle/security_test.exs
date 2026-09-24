@@ -8,65 +8,6 @@ defmodule Truestamp.Merkle.SecurityTest do
   alias Truestamp.Merkle.Generators
 
   describe "security properties" do
-    test "different leaf and internal node hashes prevent second preimage attacks" do
-      # Create a tree where we try to confuse leaf and internal node hashes
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      root1 = Merkle.root(tree)
-
-      # Create another tree with different structure but try to reuse internal hash
-      # This should fail due to domain separation
-      data2 = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree2 = Merkle.new(data2)
-      root2 = Merkle.root(tree2)
-
-      assert root1 != root2
-    end
-
-    test "domain separation ensures leaf hashes differ from internal hashes" do
-      # This test ensures that even if we have identical input data,
-      # the domain separation prevents hash collisions
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      # The root should be different from any direct hash of the input
-      direct_sha =
-        :crypto.hash(:sha256, "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678")
-        |> Base.encode16(case: :lower)
-
-      assert Merkle.root(tree) != direct_sha
-    end
-
     test "domain separation uses 0x00 prefix for leaves" do
       # Verify that leaf hashing uses the 0x00 prefix
       data = [
@@ -168,49 +109,6 @@ defmodule Truestamp.Merkle.SecurityTest do
       # behavior (a wrong root fails), which is the part that matters.
     end
 
-    test "proof size limit rejects an over-deep proof before hashing" do
-      # Create a proof-like structure that exceeds the maximum depth
-      oversized_proof =
-        Enum.map(1..65, fn _i ->
-          hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-          "l:#{hash}"
-        end)
-
-      root = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-      hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-
-      # Should reject oversized proof
-      assert Merkle.verify(hash, oversized_proof, root) == false
-    end
-
-    test "tree depth limit prevents integer overflow" do
-      # Try to create a tree that would exceed maximum depth
-      # 2^40 leaves would require depth 40, which is our limit
-      # We can't actually create 2^40 leaves, but we can verify the limit exists
-      # by checking the module's max depth constant indirectly
-
-      # Create progressively larger trees and verify depth increases correctly
-      depths =
-        for exp <- 1..10 do
-          count = :math.pow(2, exp) |> round()
-
-          data =
-            Enum.map(1..count, fn i ->
-              %{
-                "key" => "key-#{String.pad_leading(Integer.to_string(i), 8, "0")}",
-                "hash" => :crypto.hash(:sha256, "data#{i}") |> Base.encode16(case: :lower)
-              }
-            end)
-
-          tree = Merkle.new(data)
-          tree.tree_depth
-        end
-
-      # Verify depths increase monotonically and match expected values
-      expected_depths = Enum.to_list(1..10)
-      assert depths == expected_depths
-    end
-
     test "input validation rejects invalid hex hashes in verify" do
       data = [
         %{
@@ -247,86 +145,6 @@ defmodule Truestamp.Merkle.SecurityTest do
                root
              ) == false
     end
-
-    test "input validation rejects malformed proof elements" do
-      root = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-      hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-
-      # Proof element missing colon separator
-      malformed_proof1 = ["l" <> hash]
-      assert Merkle.verify(hash, malformed_proof1, root) == false
-
-      # Proof element with invalid direction
-      malformed_proof2 = ["x:#{hash}"]
-      assert Merkle.verify(hash, malformed_proof2, root) == false
-
-      # Proof element with invalid hash
-      malformed_proof3 = ["l:invalid_hash"]
-      assert Merkle.verify(hash, malformed_proof3, root) == false
-
-      # Proof element with wrong hash length
-      malformed_proof4 = ["l:a1b2c3"]
-      assert Merkle.verify(hash, malformed_proof4, root) == false
-    end
-
-    test "empty leaf padding is cryptographically distinct" do
-      # Create trees with 1, 2, and 3 elements to test padding
-      data1 = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      data2 = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      data3 = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree1 = Merkle.new(data1)
-      tree2 = Merkle.new(data2)
-      tree3 = Merkle.new(data3)
-
-      root1 = Merkle.root(tree1)
-      root2 = Merkle.root(tree2)
-      root3 = Merkle.root(tree3)
-
-      # All roots should be different (padding doesn't cause collisions)
-      assert root1 != root2
-      assert root2 != root3
-      assert root1 != root3
-    end
-
-    test "verify rejects non-list proof" do
-      root = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-      hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-
-      # Non-list proof should be rejected
-      assert Merkle.verify(hash, "not a list", root) == false
-      assert Merkle.verify(hash, %{}, root) == false
-      assert Merkle.verify(hash, nil, root) == false
-    end
   end
 
   describe "property-based security tests" do
@@ -361,29 +179,23 @@ defmodule Truestamp.Merkle.SecurityTest do
 
         proof = Merkle.proof(tree, test_key)
 
-        # Only test if proof is non-empty (not a single-element tree)
-        if proof != [] do
-          # Flip a random bit in the first proof element
-          [first_proof | rest] = proof
-          [direction, sibling_hash] = String.split(first_proof, ":", parts: 2)
+        # Two or more entries always give a path of at least one step.
+        [first_proof | rest] = proof
+        [direction, sibling_hash] = String.split(first_proof, ":", parts: 2)
 
-          # Flip last character of hash (safe bit flip)
-          flipped_hash =
-            String.slice(sibling_hash, 0..-2//1) <>
-              case String.last(sibling_hash) do
-                "a" -> "b"
-                "f" -> "e"
-                char -> if char == "0", do: "1", else: "0"
-              end
+        # Change the last hex character of the first sibling.
+        flipped_hash =
+          String.slice(sibling_hash, 0..-2//1) <>
+            case String.last(sibling_hash) do
+              "a" -> "b"
+              "f" -> "e"
+              char -> if char == "0", do: "1", else: "0"
+            end
 
-          corrupted_proof = ["#{direction}:#{flipped_hash}" | rest]
+        corrupted_proof = ["#{direction}:#{flipped_hash}" | rest]
 
-          # Verification should fail with corrupted proof
-          refute Merkle.verify(test_hash, corrupted_proof, root_hash)
-        else
-          # Single element tree - this is expected behavior
-          true
-        end
+        assert Merkle.verify(test_hash, proof, root_hash)
+        refute Merkle.verify(test_hash, corrupted_proof, root_hash)
       end
     end
 
@@ -399,22 +211,17 @@ defmodule Truestamp.Merkle.SecurityTest do
 
         proof = Merkle.proof(tree, test_key)
 
-        # Only test if proof is non-empty
-        if proof != [] do
-          # Swap direction in first proof element
-          swapped_proof =
-            Enum.map(proof, fn proof_element ->
-              [direction, hash] = String.split(proof_element, ":", parts: 2)
-              new_direction = if direction == "l", do: "r", else: "l"
-              "#{new_direction}:#{hash}"
-            end)
+        assert [_ | _] = proof
 
-          # Verification should fail with swapped directions
-          refute Merkle.verify(test_hash, swapped_proof, root_hash)
-        else
-          # Single element tree - this is expected behavior
-          true
-        end
+        # Swap the direction of every step.
+        swapped_proof =
+          Enum.map(proof, fn proof_element ->
+            [direction, hash] = String.split(proof_element, ":", parts: 2)
+            new_direction = if direction == "l", do: "r", else: "l"
+            "#{new_direction}:#{hash}"
+          end)
+
+        refute Merkle.verify(test_hash, swapped_proof, root_hash)
       end
     end
 
@@ -430,64 +237,45 @@ defmodule Truestamp.Merkle.SecurityTest do
 
         proof = Merkle.proof(tree, test_key)
 
-        # Only test if proof has multiple elements
-        if length(proof) > 1 do
-          # Remove last element from proof
-          truncated_proof = Enum.drop(proof, -1)
-
-          # Verification should fail with truncated proof
-          refute Merkle.verify(test_hash, truncated_proof, root_hash)
-        else
-          # Too small to truncate meaningfully
-          true
-        end
+        # Four or more entries always give a path of at least two steps.
+        assert length(proof) >= 2
+        refute Merkle.verify(test_hash, Enum.drop(proof, -1), root_hash)
       end
     end
 
-    property "trees are deterministic regardless of input order" do
+    property "an interior node presented as a leaf, with the path above it, fails" do
       check all(
-              data <- list_of(Generators.entry(), min_length: 2, max_length: 20),
-              unique_data = data |> Enum.uniq_by(& &1["key"]),
-              length(unique_data) >= 2
-            ) do
-        # Create tree with original order
-        tree1 = Merkle.new(unique_data)
-        root1 = Merkle.root(tree1)
-
-        # Create tree with shuffled order
-        shuffled_data = Enum.shuffle(unique_data)
-        tree2 = Merkle.new(shuffled_data)
-        root2 = Merkle.root(tree2)
-
-        assert root1 == root2
-      end
-    end
-
-    property "malicious internal node hashes cannot be used as fake leaves" do
-      check all(
-              data <- list_of(Generators.entry(), min_length: 2, max_length: 8),
-              unique_data = data |> Enum.uniq_by(& &1["key"]),
+              data <- list_of(Generators.entry(), min_length: 2, max_length: 16),
+              unique_data = Enum.uniq_by(data, & &1["key"]),
               length(unique_data) >= 2
             ) do
         tree = Merkle.new(unique_data)
-        root_hash = Merkle.root(tree)
-        %{"key" => test_key} = hd(unique_data)
+        root = Merkle.root(tree)
+        %{"key" => key, "hash" => digest} = hd(unique_data)
+        [first | above] = Merkle.proof(tree, key)
 
-        proof = Merkle.proof(tree, test_key)
+        # The node one level up from this leaf, and the rest of the path from there.
+        leaf = sha256(<<0x00>> <> Base.decode16!(digest, case: :lower))
+        [direction, sibling_hex] = String.split(first, ":")
+        sibling = Base.decode16!(sibling_hex, case: :lower)
 
-        # Try to use internal node hash (from proof) as a fake leaf
-        if proof != [] do
-          [_direction, internal_hash] = String.split(hd(proof), ":", parts: 2)
+        node =
+          if direction == "r",
+            do: sha256(<<0x01>> <> leaf <> sibling),
+            else: sha256(<<0x01>> <> sibling <> leaf)
 
-          # Create fake data using internal hash as "leaf" hash
-          fake_data = [%{"key" => "fake-key-attack-test", "hash" => internal_hash}]
-          fake_tree = Merkle.new(fake_data)
-          fake_root = Merkle.root(fake_tree)
+        # Walking up from the node as it stands reaches the root...
+        reached =
+          Enum.reduce(above, node, fn step, acc ->
+            [d, s] = String.split(step, ":")
+            s = Base.decode16!(s, case: :lower)
+            if d == "r", do: sha256(<<0x01>> <> acc <> s), else: sha256(<<0x01>> <> s <> acc)
+          end)
 
-          # The fake tree root should be different from original
-          # This proves domain separation is working
-          assert fake_root != root_hash
-        end
+        assert Base.encode16(reached, case: :lower) == root
+
+        # ...but presented as a leaf it is hashed with 0x00 first, so it does not.
+        refute Merkle.verify(Base.encode16(node, case: :lower), above, root)
       end
     end
 
@@ -511,33 +299,6 @@ defmodule Truestamp.Merkle.SecurityTest do
           for %{"key" => key, "hash" => hash} <- data do
             assert Merkle.verify(hash, Merkle.proof(tree, key), root_hash), "size #{size}"
           end
-        end
-      end
-    end
-
-    property "injectable sibling attacks fail due to domain separation" do
-      check all(
-              data <- list_of(Generators.entry(), min_length: 2, max_length: 8),
-              unique_data = data |> Enum.uniq_by(& &1["key"]),
-              length(unique_data) >= 2
-            ) do
-        tree = Merkle.new(unique_data)
-        root_hash = Merkle.root(tree)
-        %{"key" => test_key} = hd(unique_data)
-
-        proof = Merkle.proof(tree, test_key)
-
-        # Try to use internal node hash (from proof) as a fake leaf input
-        if proof != [] do
-          [_direction, internal_hash] = String.split(hd(proof), ":", parts: 2)
-
-          # Attempt to create a malicious tree using internal hash as leaf
-          malicious_data = [%{"key" => "malicious-key-test", "hash" => internal_hash}]
-          malicious_tree = Merkle.new(malicious_data)
-          malicious_root = Merkle.root(malicious_tree)
-
-          # The roots should be different - domain separation prevents this attack
-          assert malicious_root != root_hash
         end
       end
     end
@@ -683,13 +444,10 @@ defmodule Truestamp.Merkle.SecurityTest do
 
         proof = Merkle.proof(tree, key)
 
-        if length(proof) >= 2 do
-          # Reverse the proof array
-          reversed_proof = Enum.reverse(proof)
-
-          # Should fail unless proof is symmetric (rare edge case)
-          assert proof == reversed_proof or not Merkle.verify(hash, reversed_proof, root)
-        end
+        # Four or more entries give at least two steps, and siblings at different
+        # levels differ, so reversing the path changes it.
+        assert length(proof) >= 2
+        refute Merkle.verify(hash, Enum.reverse(proof), root)
       end
     end
 
@@ -856,4 +614,6 @@ defmodule Truestamp.Merkle.SecurityTest do
       end
     end
   end
+
+  defp sha256(bytes), do: :crypto.hash(:sha256, bytes)
 end

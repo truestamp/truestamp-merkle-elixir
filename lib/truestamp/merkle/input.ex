@@ -13,12 +13,12 @@ defmodule Truestamp.Merkle.Input do
 
   def validate_entries!(entries), do: Enum.each(entries, &validate_entry!/1)
 
-  def validate_entry!(%{"key" => key, "hash" => digest}) do
+  defp validate_entry!(%{"key" => key, "hash" => digest}) do
     validate_key!(key)
     validate_digest!(digest)
   end
 
-  def validate_entry!(invalid) do
+  defp validate_entry!(invalid) do
     raise ArgumentError,
           "Invalid input entry format. Expected map with \"key\" and \"hash\" keys, got: #{inspect(invalid, limit: 10)}"
   end
@@ -39,7 +39,8 @@ defmodule Truestamp.Merkle.Input do
             "Invalid key format. Expected alphanumeric characters with optional .-_ separators, got: #{inspect(key, limit: 10)}"
     end
 
-    # The contract reserves this prefix for padding slots, in any case.
+    # The README's tree contract reserves this prefix, in any case, though padding
+    # slots carry no key.
     if String.starts_with?(String.downcase(key), "__pad__") do
       raise ArgumentError,
             "Invalid key format. Keys must not use reserved padding prefix, got: #{inspect(key, limit: 10)}"

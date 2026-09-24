@@ -12,9 +12,9 @@ defmodule Truestamp.Merkle.Codec do
   #                  bit N is 1 when step N is "r:", and every bit from depth up is 0
   #     the rest     each sibling's 32 raw bytes, bottom to top
 
-  alias Truestamp.Merkle.{Hash, Path}
+  alias Truestamp.Merkle.{Hash, Paths}
 
-  @max_steps Path.max_steps()
+  @max_steps Paths.max_steps()
   @digest_hex_chars Hash.digest_hex_chars()
   @digest_bytes Hash.digest_bytes()
 
@@ -94,7 +94,7 @@ defmodule Truestamp.Merkle.Codec do
   end
 
   defp encodable_step!(step) do
-    case Path.parse_step(step) do
+    case Paths.parse_step(step) do
       {:ok, parsed} -> parsed
       :error -> raise ArgumentError, encoding_error(step)
     end

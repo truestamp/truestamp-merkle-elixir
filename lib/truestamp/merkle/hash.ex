@@ -35,8 +35,7 @@ defmodule Truestamp.Merkle.Hash do
   # slots carry it, and the tree places them itself, never a caller.
   @reserved_digest_hex Base.encode16(@reserved_digest, case: :lower)
 
-  # The leaf hash every padding slot holds, SHA256(0x00 || reserved), so a padded tree
-  # hashes identically whichever construction path built it.
+  # The leaf hash every padding slot holds: SHA256(0x00 || reserved).
   @padding_leaf :crypto.hash(:sha256, <<0x00>> <> @reserved_digest)
 
   # The root of a tree with no entries.

@@ -181,7 +181,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       assert length(tree.leaves) == 1
     end
 
-    test "produces same root as new/1 for same data" do
+    test "produces same root as new/2 for same data" do
       data = [
         %{
           "key" => "entry-1",
@@ -273,7 +273,7 @@ defmodule Truestamp.Merkle.BuilderTest do
              )
     end
 
-    test "proofs match between new/1 and builder for same data" do
+    test "proofs match between new/2 and builder for same data" do
       data = [
         %{
           "key" => "entry-1",
@@ -325,7 +325,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       assert length(tree.leaves) == 2
     end
 
-    test "produces same root as new/1 for same data" do
+    test "produces same root as new/2 for same data" do
       entries = [
         %{
           id: "entry-1",
@@ -395,7 +395,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       assert length(tree.leaves) == 2
     end
 
-    test "produces same root as new/1" do
+    test "produces same root as new/2" do
       maps = [
         %{
           "key" => "entry-1",
@@ -439,7 +439,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       assert length(tree.leaves) == 2
     end
 
-    test "produces same root as new/1" do
+    test "produces same root as new/2" do
       tuples = [
         {"entry-1", "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"},
         {"entry-2", "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"}
@@ -535,7 +535,7 @@ defmodule Truestamp.Merkle.BuilderTest do
   end
 
   describe "all construction methods produce identical results" do
-    test "new/1, builder, from_stream, from_maps, from_tuples all produce same tree" do
+    test "new/2, builder, from_stream, from_maps, from_tuples all produce same tree" do
       # Generate complex test data with varied keys
       map_data =
         for i <- 1..50 do
@@ -608,7 +608,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       end
     end
 
-    test "new/1 and the builder constructors never disagree about an input list" do
+    test "new/2 and the builder constructors never disagree about an input list" do
       hash = fn seed -> :crypto.hash(:sha256, seed) |> Base.encode16(case: :lower) end
 
       inputs = [
@@ -643,7 +643,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       end
     end
 
-    test "new/1 rejects a repeated key that the builder folds away" do
+    test "new/2 rejects a repeated key that the builder folds away" do
       hash = "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
       other = "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
 
@@ -663,7 +663,7 @@ defmodule Truestamp.Merkle.BuilderTest do
       end
 
       # The builder accepts the repeat and folds it into the one leaf it already
-      # holds, landing on the root new/1 produces for the list without the repeat.
+      # holds, landing on the root new/2 produces for the list without the repeat.
       assert Merkle.from_maps(with_duplicate) |> Merkle.root() ==
                Merkle.new(without_duplicate) |> Merkle.root()
     end

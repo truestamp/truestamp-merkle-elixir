@@ -111,8 +111,20 @@ defmodule Truestamp.Merkle.VectorsTest do
 
         assert {:error, reason} = Merkle.walk(digest, steps, max_steps: cap)
         assert Atom.to_string(reason) == @refusal["error"]
-        refute Merkle.verify(digest, steps, @vectors["constants"]["empty_root"], max_steps: cap)
       end
+    end
+
+    test "verify refuses what walk refuses, even against the root the path would reach" do
+      reachable =
+        for %{"digest" => digest, "steps" => steps, "max_steps" => cap} <-
+              @vectors["walk_refusals"],
+            {:ok, root} <- [unchecked_root(digest, steps)] do
+          refute Merkle.verify(digest, steps, root, max_steps: cap), inspect({digest, cap})
+          root
+        end
+
+      # The digest, reserved, cap and case refusals all have such a root.
+      assert length(reachable) >= 8
     end
 
     test "the binary decoder refuses every non-canonical binary, naming why" do
@@ -145,4 +157,37 @@ defmodule Truestamp.Merkle.VectorsTest do
     assert Enum.reject(known, &String.contains?(vectors, &1)) == []
     assert String.contains?(vectors, "AQHXisvDVvoXHOQLty_6dMveBsNq78JniprxjTl1WB6Wnw")
   end
+
+  # Where a refused path would lead if nothing checked it: any case of hex, any number of
+  # steps, the reserved digest allowed. :error when the bytes cannot even be read.
+  defp unchecked_root(digest, steps) do
+    with {:ok, leaf} <- Base.decode16(digest, case: :mixed),
+         {:ok, parsed} <- unchecked_steps(steps, []) do
+      start = :crypto.hash(:sha256, <<0x00>> <> leaf)
+
+      root =
+        Enum.reduce(parsed, start, fn
+          {:l, sibling}, acc -> :crypto.hash(:sha256, <<0x01>> <> sibling <> acc)
+          {:r, sibling}, acc -> :crypto.hash(:sha256, <<0x01>> <> acc <> sibling)
+        end)
+
+      {:ok, Base.encode16(root, case: :lower)}
+    else
+      _ -> :error
+    end
+  end
+
+  defp unchecked_steps([], parsed), do: {:ok, Enum.reverse(parsed)}
+
+  defp unchecked_steps([<<d, ?:, hex::binary-size(64)>> | rest], parsed) when d in ~c"lLrR" do
+    case Base.decode16(hex, case: :mixed) do
+      {:ok, sibling} ->
+        unchecked_steps(rest, [{if(d in ~c"lL", do: :l, else: :r), sibling} | parsed])
+
+      :error ->
+        :error
+    end
+  end
+
+  defp unchecked_steps(_steps, _parsed), do: :error
 end

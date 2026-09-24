@@ -38,9 +38,10 @@ defmodule Truestamp.AssertionsTest do
   defp problems(ast) do
     {_, found} =
       Macro.prewalk(ast, [], fn
-        {kind, meta, [name | rest]} = node, acc
-        when kind in [:test, :property] and is_binary(name) ->
-          {node, check(body(rest), "#{meta[:line]} #{kind} #{inspect(name)}", acc)}
+        {kind, meta, [name | rest]} = node, acc when kind in [:test, :property] ->
+          if test_name?(name),
+            do: {node, check(body(rest), "#{meta[:line]} #{kind} #{Macro.to_string(name)}", acc)},
+            else: {node, acc}
 
         {:check, meta, [{:all, _, clauses} | rest]} = node, acc ->
           {node, check(body(rest) || body(clauses), "#{meta[:line]} check all", acc)}
@@ -51,6 +52,9 @@ defmodule Truestamp.AssertionsTest do
 
     Enum.reverse(found)
   end
+
+  # A literal name, or one built by interpolation.
+  defp test_name?(name), do: is_binary(name) or match?({:<<>>, _, _}, name)
 
   defp check(nil, _where, acc), do: acc
 

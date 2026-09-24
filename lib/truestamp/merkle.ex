@@ -135,17 +135,17 @@ defmodule Truestamp.Merkle do
     `ArgumentError` for a proof that would not survive the round trip
   - `steps_from_binary/1` and `decode_proof_base64/1` take untrusted bytes, so they return
     `{:ok, proof}` or `{:error, reason}` rather than raising, where the reason is one of
-    the atoms `decode_error()` lists
+    the atoms `binary_error()` and `decode_error()` list
   """
 
   # The public API. Each function delegates to the internal module that owns it:
-  # Tree builds, Path proves and walks, Codec encodes paths for storage, Input holds
-  # the entry rules, and Hash the hashing and hex rules they all share.
+  # Tree builds, Paths produces and walks paths, Codec encodes paths for storage,
+  # Input holds the entry rules, and Hash the hashing and hex rules they all share.
 
-  alias __MODULE__.{Builder, Codec, Hash, Path, Tree}
+  alias __MODULE__.{Builder, Codec, Hash, Paths, Tree}
 
   # Interpolated into the docs below.
-  @max_proof_depth Path.max_steps()
+  @max_proof_depth Paths.max_steps()
   @expected_hash_hex_chars Hash.digest_hex_chars()
   @empty_leaf_hash_hex Hash.reserved_digest_hex()
 
@@ -165,12 +165,9 @@ defmodule Truestamp.Merkle do
 
   @type walk_error :: :invalid_leaf | :reserved_leaf | :too_many_steps | :invalid_step
 
-  @type decode_error ::
-          :too_many_steps
-          | :wrong_length
-          | :unused_direction_bits
-          | :invalid_binary
-          | :invalid_base64url
+  @type binary_error :: :invalid_binary | :too_many_steps | :wrong_length | :unused_direction_bits
+
+  @type decode_error :: binary_error() | :invalid_base64url
 
   # ── Building a tree from a list ───────────────────────────────────────────
 
@@ -301,7 +298,7 @@ defmodule Truestamp.Merkle do
   def proof(%__MODULE__{leaf_index: index, tree_depth: depth, tree_levels: levels}, key) do
     # One map lookup finds the leaf, however large the tree.
     case Map.fetch(index, key) do
-      {:ok, position} -> Path.steps(levels, position, depth)
+      {:ok, position} -> Paths.steps(levels, position, depth)
       :error -> nil
     end
   end
@@ -352,7 +349,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec walk(term(), term(), keyword()) :: {:ok, binary()} | {:error, walk_error()}
-  defdelegate walk(leaf_hex, steps, opts \\ []), to: Path
+  defdelegate walk(leaf_hex, steps, opts \\ []), to: Paths
 
   @doc """
   Verifies that `leaf_hex` is in the tree whose root is `root_hex`.
@@ -394,7 +391,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec verify(term(), term(), term(), keyword()) :: boolean()
-  defdelegate verify(leaf_hex, steps, root_hex, opts \\ []), to: Path
+  defdelegate verify(leaf_hex, steps, root_hex, opts \\ []), to: Paths
 
   # ── Building a tree incrementally ─────────────────────────────────────────
 
@@ -615,13 +612,13 @@ defmodule Truestamp.Merkle do
   `depth` up clear, and exactly `depth` 32-byte siblings, with nothing after them. A set
   unused direction bit would give one path several encodings, so it is refused.
 
-  The checks run in this order, and the first that fails names the refusal:
+  An argument that is not a binary is refused with `:invalid_binary`. For a binary, the
+  checks run in this order, and the first that fails names the refusal:
 
     * `:too_many_steps` - the depth byte is over #{@max_proof_depth}.
     * `:wrong_length` - the bytes after the depth are not exactly the direction bytes and
       siblings it implies, or there are no bytes at all.
     * `:unused_direction_bits` - a direction bit past the depth is set.
-    * `:invalid_binary` - the argument is not a binary.
 
   ## Examples
 
@@ -638,7 +635,7 @@ defmodule Truestamp.Merkle do
       {:error, :unused_direction_bits}
 
   """
-  @spec steps_from_binary(term()) :: {:ok, proof()} | {:error, decode_error()}
+  @spec steps_from_binary(term()) :: {:ok, proof()} | {:error, binary_error()}
   defdelegate steps_from_binary(binary), to: Codec
 
   @doc """

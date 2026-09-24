@@ -1,7 +1,7 @@
 # Copyright (c) 2025-2026 Truestamp, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-defmodule Truestamp.Merkle.Path do
+defmodule Truestamp.Merkle.Paths do
   @moduledoc false
 
   # Inclusion paths: producing one from a built tree, and walking one back up to the

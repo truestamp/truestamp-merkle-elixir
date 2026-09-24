@@ -682,48 +682,34 @@ defmodule Truestamp.Merkle.TreeTest do
   end
 
   describe "padding with generic key format" do
-    test "padding keys use the __PAD__ format, which caller input cannot use" do
-      # Create a tree that requires padding (3 leaves -> padded to 4)
-      data = [
-        %{
-          "key" => "test-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-2",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "test-3",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
+    test "padding lives in the levels only: the leaves and the index hold caller entries" do
+      data =
+        for i <- 1..3 do
+          %{
+            "key" => "test-#{i}",
+            "hash" => Base.encode16(:crypto.hash(:sha256, "t#{i}"), case: :lower)
+          }
+        end
 
       tree = Merkle.new(data)
 
-      # Leaves should only contain caller input (padding is internal)
-      assert length(tree.leaves) == 3
-
-      # Tree depth should account for padding (4 leaves = depth 2)
+      assert Enum.map(tree.leaves, &elem(&1, 0)) == ["test-1", "test-2", "test-3"]
+      assert map_size(tree.leaf_index) == 3
       assert tree.tree_depth == 2
-
-      # Verify tree was constructed successfully with padding
-      assert is_binary(tree.root_hash)
-      assert byte_size(tree.root_hash) == 32
+      assert tuple_size(hd(tree.tree_levels)) == 4
+      assert elem(hd(tree.tree_levels), 3) == decode(padding_leaf_hash())
     end
 
-    test "padding keys cannot collide with caller keys" do
-      # Try to supply a caller key that looks like padding
-      invalid_data = [
-        %{
-          "key" => "__PAD__0000000000000001",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
+    test "a caller key with the reserved padding prefix is refused, in any case" do
+      for key <- ["__PAD__0000000000000001", "__pad__1", "__Pad__x"] do
+        data = [
+          %{
+            "key" => key,
+            "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
+          }
+        ]
 
-      # Should raise ArgumentError due to reserved padding prefix
-      assert_raise ArgumentError, ~r/reserved padding prefix/, fn ->
-        Merkle.new(invalid_data)
+        assert_raise ArgumentError, ~r/reserved padding prefix/, fn -> Merkle.new(data) end
       end
     end
 
@@ -797,53 +783,7 @@ defmodule Truestamp.Merkle.TreeTest do
       assert elem(Enum.at(tree.leaves, 2), 0) == "m-middle"
     end
 
-    test "padding is deterministic for same tree size" do
-      # Single leaf trees are special case - no padding needed (depth 0)
-      # Use 3 leaves -> padded to 4 to test determinism
-      data1 = [
-        %{
-          "key" => "a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "b",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "c",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      data2 = [
-        %{
-          "key" => "a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "b",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "c",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      tree1 = Merkle.new(data1)
-      tree2 = Merkle.new(data2)
-
-      # Same input with deterministic padding should produce identical roots
-      assert Merkle.root(tree1) == Merkle.root(tree2)
-
-      # Both should have depth 2 (padded to 4 leaves)
-      assert tree1.tree_depth == 2
-      assert tree2.tree_depth == 2
-    end
-
-    test "padding uses empty leaf hash internally" do
-      # This test verifies padding behavior by comparing tree roots
-      # Single-entry trees have no padding (special case), so use 3 entries -> padded to 4
+    test "three entries pad to four with the padding leaf, reproduced by hand" do
       data = [
         %{
           "key" => "entry-1",
@@ -859,16 +799,14 @@ defmodule Truestamp.Merkle.TreeTest do
         }
       ]
 
+      [l1, l2, l3] = Enum.map(data, &decode(leaf_hash(&1["hash"])))
+      l4 = decode(padding_leaf_hash())
+      node = fn left, right -> :crypto.hash(:sha256, <<0x01>> <> left <> right) end
+      expected = node.(node.(l1, l2), node.(l3, l4)) |> Base.encode16(case: :lower)
+
       tree = Merkle.new(data)
-
-      # Tree should be constructed successfully with padding
-      assert is_binary(tree.root_hash)
-      assert byte_size(tree.root_hash) == 32
       assert tree.tree_depth == 2
-
-      # Verify the tree root is deterministic
-      tree2 = Merkle.new(data)
-      assert Merkle.root(tree) == Merkle.root(tree2)
+      assert Merkle.root(tree) == expected
     end
 
     test "a hand-built proof for a padding slot does not verify" do
