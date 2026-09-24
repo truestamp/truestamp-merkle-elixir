@@ -7,8 +7,8 @@ defmodule Truestamp.Merkle do
 
   Secure, deterministic Merkle tree for cryptographic applications. Handles millions of
   leaves with strong security properties and a simple API. Standalone module with zero
-  external dependencies beyond `:crypto` and `Base`. Requires OTP 25 or newer, which is
-  where `:crypto.hash_equals/2` arrived.
+  external dependencies beyond `:crypto` and `Base`. Requires Elixir 1.20, and so OTP 27
+  or newer.
 
   You supply entries: a key, plus a 32-byte digest you have already computed over
   whatever that key names. The tree sorts, pads and hashes those into leaves. What a key
@@ -44,7 +44,7 @@ defmodule Truestamp.Merkle do
   The synthetic leaf carries a single reserved value,
   `96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7`, and padding
   slots are placed by the tree, never by a caller. That value is therefore refused
-  in both directions: `new/2` and the builder raise `ArgumentError` if you hand it
+  in both directions: `new/2` raises `ArgumentError` if you hand it
   in as an entry hash, `walk/3` refuses it with `{:error, :reserved_leaf}`, and
   `verify/4` returns `false` if you present it as the value being proved, because such
   a proof proves a padding slot rather than an entry.
@@ -119,8 +119,6 @@ defmodule Truestamp.Merkle do
   - `walk/3` - Recompute the root an inclusion path implies (returns `{:ok, root}` or an error)
   - `verify/4` - Check an inclusion path against a root hash (returns boolean)
   - `steps_to_binary/1`, `steps_from_binary/1` - The compact binary form of a path, for storage
-  - `builder/0`, `add_entry/2`, `add_entries/2`, `finalize/2` - Streaming builder pattern
-  - `from_stream/2`, `from_maps/2`, `from_tuples/2` - Convenience constructors
 
   ## Error Handling
 
@@ -142,7 +140,7 @@ defmodule Truestamp.Merkle do
   # Tree builds, Paths produces and walks paths, Codec encodes paths for storage,
   # Input holds the entry rules, and Hash the hashing and hex rules they all share.
 
-  alias __MODULE__.{Builder, Codec, Hash, Paths, Tree}
+  alias __MODULE__.{Codec, Hash, Paths, Tree}
 
   # Interpolated into the docs below.
   @max_proof_depth Paths.max_steps()
@@ -174,28 +172,20 @@ defmodule Truestamp.Merkle do
   @doc """
   Creates a new Merkle tree from a list of key-hash maps.
 
-  **This is the fastest tree construction method.** Use it when all entries are available
-  upfront. For streaming or incremental input, use the builder or the convenience
-  wrappers (`from_stream/2`, `from_maps/2`, `from_tuples/2`), which cost more for their
-  duplicate detection. The README's Performance section has measured figures.
+  The README's Performance section has measured figures.
 
   Input data should be a list of maps with "key" and "hash" keys:
   - "key": Alphanumeric string with optional .-_ separators (max 36 chars)
-  - "hash": Pre-computed SHA-256 digest as 64-character lowercase hex string (^[a-f0-9]{64}$)
+  - "hash": Pre-computed SHA-256 digest as exactly 64 lowercase hex characters
 
   ## Duplicate Keys
 
   Every key must appear exactly once. A key that appears twice raises
-  `ArgumentError`, whether or not the two hashes agree. The Builder is looser:
-  `add_entry/2` ignores a repeat whose hash matches the one it already holds for
-  that key, and only raises when the hashes differ. So the builder path accepts
-  everything `new/2` accepts, plus repeats of identical entries, and for any input
-  both accept the two produce the same root.
+  `ArgumentError`, whether or not the two hashes agree.
 
   ## Empty Input
 
-  `new([])` builds the empty tree, whose root is `SHA256("")`.
-  `finalize/2` on a builder that was never fed returns the same tree. That root is not
+  `new([])` builds the empty tree, whose root is `SHA256("")`. That root is not
   the leaf hash of anything, so no inclusion proof can verify against it: a `false`
   from `verify/4` against an empty tree's root is the right answer rather than a fault.
 
@@ -392,166 +382,6 @@ defmodule Truestamp.Merkle do
   """
   @spec verify(term(), term(), term(), keyword()) :: boolean()
   defdelegate verify(leaf_hex, steps, root_hex, opts \\ []), to: Paths
-
-  # ── Building a tree incrementally ─────────────────────────────────────────
-
-  @doc """
-  Creates a new empty builder for incrementally constructing a Merkle tree.
-
-  ## Example
-
-      builder = Merkle.builder()
-      builder = Merkle.add_entry(builder, %{"key" => "entry1", "hash" => "abc..."})
-      tree = Merkle.finalize(builder)
-
-  """
-  @spec builder() :: Builder.t()
-  defdelegate builder(), to: Tree
-
-  @doc """
-  Adds a single entry to the builder.
-
-  Validates the entry and pre-computes its leaf hash. Entries are accumulated
-  for later finalization.
-
-  ## Duplicate Handling
-
-  - If both key AND hash match an entry already added → silently ignored (idempotent)
-  - If key exists with a different hash → raises `ArgumentError`
-
-  ## Example
-
-      builder = Merkle.builder()
-                |> Merkle.add_entry(%{"key" => "entry1", "hash" => "a1b2..."})
-                |> Merkle.add_entry(%{"key" => "entry2", "hash" => "c3d4..."})
-
-  """
-  @spec add_entry(Builder.t(), %{binary() => binary()}) :: Builder.t()
-  defdelegate add_entry(builder, entry), to: Tree
-
-  @doc """
-  Adds multiple entries from an enumerable to the builder.
-
-  This is a convenience wrapper that reduces over the enumerable,
-  calling `add_entry/2` for each element.
-
-  ## Example
-
-      entries = [
-        %{"key" => "entry1", "hash" => "a1b2..."},
-        %{"key" => "entry2", "hash" => "c3d4..."}
-      ]
-
-      builder = Merkle.builder() |> Merkle.add_entries(entries)
-      tree = Merkle.finalize(builder)
-
-  """
-  @spec add_entries(Builder.t(), Enumerable.t()) :: Builder.t()
-  defdelegate add_entries(builder, enumerable), to: Tree
-
-  @doc """
-  Finalizes the builder into a complete Merkle tree.
-
-  Sorts leaves by key (unless `sort: false`), pads to next power of 2,
-  and builds the full tree structure.
-
-  ## Options
-
-    * `:sort` (default: `true`) - When `true`, sorts leaves by key for
-      deterministic ordering. When `false`, preserves insertion order.
-
-  ## Example
-
-      tree = builder |> Merkle.finalize()
-      tree = builder |> Merkle.finalize(sort: false)
-
-      # The returned tree supports all standard operations
-      root = Merkle.root(tree)
-      proof = Merkle.proof(tree, "some-key")
-
-  """
-  @spec finalize(Builder.t(), keyword()) :: t()
-  defdelegate finalize(builder, opts \\ []), to: Tree
-
-  @doc """
-  Creates a Merkle tree from an enumerable using extractor functions.
-
-  This is the most flexible convenience wrapper - it works with any data type
-  by using the provided functions to extract keys and hashes.
-
-  **Performance note**: slower than `new/2`, because of the per-entry extractor calls and
-  the builder's duplicate detection. Use `new/2` when all entries are available upfront
-  and performance is critical. `bench/proof_generation_benchmark.exs` compares the
-  construction paths.
-
-  ## Options
-
-    * `:key_fn` (required) - Function to extract key from each element
-    * `:hash_fn` (required) - Function to extract hash from each element
-    * `:sort` (default: `true`) - Whether to sort by key
-
-  ## Examples
-
-      # From a list of structs
-      tree = records |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.digest)
-
-      # From a database stream
-      tree = Repo.stream(query)
-             |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.hash)
-
-      # Disable sorting for pre-sorted data
-      tree = sorted_records
-             |> Merkle.from_stream(key_fn: & &1.id, hash_fn: & &1.hash, sort: false)
-
-  """
-  @spec from_stream(Enumerable.t(), keyword()) :: t()
-  defdelegate from_stream(enumerable, opts), to: Tree
-
-  @doc """
-  Creates a Merkle tree from an enumerable of maps with "key" and "hash" fields.
-
-  This is the stream equivalent of `new/2`: use it when your data is already
-  in the standard `%{"key" => ..., "hash" => ...}` format.
-
-  **Performance note**: this is the builder path with no conversion on top, so it costs
-  what `builder + finalize` costs: more than `new/2`, by a margin that grows with the
-  entry count as the duplicate-detection map fills. Use `new/2` when all entries are
-  available upfront and performance is critical. `bench/proof_generation_benchmark.exs`
-  compares the construction paths.
-
-  ## Options
-
-    * `:sort` (default: `true`) - Whether to sort by key
-
-  ## Examples
-
-      tree = map_stream |> Merkle.from_maps()
-      tree = map_stream |> Merkle.from_maps(sort: false)
-
-  """
-  @spec from_maps(Enumerable.t(), keyword()) :: t()
-  defdelegate from_maps(enumerable, opts \\ []), to: Tree
-
-  @doc """
-  Creates a Merkle tree from an enumerable of `{key, hash}` tuples.
-
-  **Performance note**: slower than `new/2`, because every tuple is turned into a map
-  before the builder sees it. Use `new/2` when all entries are available upfront and
-  performance is critical. `bench/proof_generation_benchmark.exs` compares the
-  construction paths.
-
-  ## Options
-
-    * `:sort` (default: `true`) - Whether to sort by key
-
-  ## Examples
-
-      tree = [{id1, hash1}, {id2, hash2}] |> Merkle.from_tuples()
-      tree = tuple_stream |> Merkle.from_tuples(sort: false)
-
-  """
-  @spec from_tuples(Enumerable.t(), keyword()) :: t()
-  defdelegate from_tuples(enumerable, opts \\ []), to: Tree
 
   # ── Storing a path ────────────────────────────────────────────────────────
 

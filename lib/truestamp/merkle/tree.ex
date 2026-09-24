@@ -4,26 +4,30 @@
 defmodule Truestamp.Merkle.Tree do
   @moduledoc false
 
-  # Building a tree, from a whole list or through the builder. Both paths end in
-  # assemble/3, so a tree hashes identically whichever built it.
+  # Building a tree from a list of entries.
 
   alias Truestamp.Merkle
-  alias Truestamp.Merkle.{Builder, Hash, Input}
+  alias Truestamp.Merkle.{Hash, Input}
 
   # Ceiling on the depth arithmetic, which keeps the leaf-count math in range. Not a
   # resource limit: 2^40 = 1,099,511,627,776 (~1 trillion) leaves exhausts memory long
   # before the cap is reached.
   @max_depth 40
 
-  def new([], _opts), do: empty()
+  def new(entries, opts) do
+    sort? = sort_option!(opts)
+    build(entries, sort?)
+  end
 
-  def new(entries, opts) when is_list(entries) do
+  defp build([], _sort?), do: empty()
+
+  defp build(entries, sort?) when is_list(entries) do
     Input.validate_entries!(entries)
 
     pairs =
       entries
       |> Enum.map(fn %{"key" => key, "hash" => digest} -> {key, digest} end)
-      |> maybe_sort(opts)
+      |> maybe_sort(sort?)
 
     # The index keys on the entry's key, so a key that repeats collapses two entries
     # into one. Comparing sizes catches that without a second pass; only the failing
@@ -34,72 +38,9 @@ defmodule Truestamp.Merkle.Tree do
     assemble(pairs, Enum.map(pairs, fn {_key, digest} -> Hash.leaf(digest) end), index)
   end
 
-  def new(entries, _opts) do
+  defp build(entries, _sort?) do
     raise ArgumentError,
           "Invalid input data. Expected a list of maps with \"key\" and \"hash\" keys, got: #{inspect(entries, limit: 10)}"
-  end
-
-  def builder, do: %Builder{}
-
-  # The builder hashes each leaf as it arrives and remembers every key's digest, so a
-  # repeat is caught at once: an identical repeat is ignored, a conflicting one raises.
-  def add_entry(%Builder{} = builder, %{"key" => key, "hash" => digest}) do
-    Input.validate_key!(key)
-    Input.validate_digest!(digest)
-
-    case Map.get(builder.seen, key) do
-      nil ->
-        %Builder{
-          leaves: [{key, Hash.leaf(digest)} | builder.leaves],
-          seen: Map.put(builder.seen, key, digest),
-          count: builder.count + 1
-        }
-
-      ^digest ->
-        builder
-
-      existing ->
-        raise ArgumentError, """
-        Duplicate key with different hash detected.
-        Key: #{inspect(key)}
-        Existing hash: #{existing}
-        New hash: #{digest}
-        """
-    end
-  end
-
-  def add_entries(%Builder{} = builder, enumerable) do
-    Enum.reduce(enumerable, builder, &add_entry(&2, &1))
-  end
-
-  def finalize(%Builder{leaves: [], count: 0}, _opts), do: empty()
-
-  def finalize(%Builder{leaves: leaves, seen: seen}, opts) do
-    # add_entry/2 prepends, so reverse to insertion order before any sort.
-    leaves = leaves |> Enum.reverse() |> maybe_sort(opts)
-    pairs = Enum.map(leaves, fn {key, _leaf} -> {key, Map.fetch!(seen, key)} end)
-    assemble(pairs, Enum.map(leaves, &elem(&1, 1)), leaf_index(pairs))
-  end
-
-  def from_stream(enumerable, opts) do
-    key_fn = Keyword.fetch!(opts, :key_fn)
-    hash_fn = Keyword.fetch!(opts, :hash_fn)
-
-    enumerable
-    |> Enum.reduce(builder(), fn item, acc ->
-      add_entry(acc, %{"key" => key_fn.(item), "hash" => hash_fn.(item)})
-    end)
-    |> finalize(Keyword.take(opts, [:sort]))
-  end
-
-  def from_maps(enumerable, opts), do: builder() |> add_entries(enumerable) |> finalize(opts)
-
-  def from_tuples(enumerable, opts) do
-    enumerable
-    |> Enum.reduce(builder(), fn {key, digest}, acc ->
-      add_entry(acc, %{"key" => key, "hash" => digest})
-    end)
-    |> finalize(opts)
   end
 
   defp empty do
@@ -151,8 +92,20 @@ defmodule Truestamp.Merkle.Tree do
   defp bit_length(0), do: 0
   defp bit_length(n), do: 1 + bit_length(Bitwise.bsr(n, 1))
 
-  defp maybe_sort(pairs, opts) do
-    if Keyword.get(opts, :sort, true), do: Enum.sort_by(pairs, &elem(&1, 0)), else: pairs
+  defp maybe_sort(pairs, true), do: Enum.sort_by(pairs, &elem(&1, 0))
+  defp maybe_sort(pairs, false), do: pairs
+
+  # :sort is the only option, and it must be a boolean: a misspelled or non-boolean
+  # option would otherwise build a different root without a word.
+  defp sort_option!(opts) when is_list(opts) do
+    case Keyword.validate!(opts, sort: true)[:sort] do
+      sort? when is_boolean(sort?) -> sort?
+      other -> raise ArgumentError, ":sort must be true or false, got: #{inspect(other)}"
+    end
+  end
+
+  defp sort_option!(opts) do
+    raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
   end
 
   # {key => position} for the real leaves, which is what keeps proof generation off a

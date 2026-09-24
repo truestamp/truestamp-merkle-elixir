@@ -14,8 +14,6 @@ defmodule TruestampMerkleDemo do
   - JSON serialization/deserialization
   - Determinism verification
   - Security features (second preimage resistance)
-  - Builder pattern for streaming/incremental tree construction
-  - Convenience wrappers (from_stream, from_maps, from_tuples)
   - Performance benchmarking
   """
 
@@ -36,12 +34,6 @@ defmodule TruestampMerkleDemo do
     # Demo 4: Security features
     demo_security_features()
 
-    # Demo 5: Builder pattern (streaming API)
-    demo_builder_pattern()
-
-    # Demo 6: Convenience wrappers
-    demo_convenience_wrappers()
-
     # Demo 7: Performance benchmarks
     demo_performance()
 
@@ -54,7 +46,6 @@ defmodule TruestampMerkleDemo do
     IO.puts("• Ultra-compact proof structure (direction:hash strings)")
     IO.puts("• Efficient performance for large datasets")
     IO.puts("• Simple API designed for easy TypeScript porting")
-    IO.puts("• Builder pattern for streaming/incremental tree construction")
     IO.puts("• Convenience wrappers for various input formats")
   end
 
@@ -271,171 +262,6 @@ defmodule TruestampMerkleDemo do
     IO.puts("\nMulti-element tree:")
     IO.puts("Root hash: #{multi_root}")
     IO.puts("Different from single element: #{multi_root != root}")
-    IO.puts("")
-  end
-
-  defp demo_builder_pattern do
-    IO.puts("Demo 5: Builder Pattern (Streaming API)")
-    IO.puts("=" <> String.duplicate("=", 40))
-
-    IO.puts("The builder pattern allows incremental tree construction:")
-    IO.puts("• Pre-compute leaf hashes as items are added")
-    IO.puts("• Fail fast on invalid input or duplicate keys")
-    IO.puts("• Build tree only when finalized")
-    IO.puts("")
-
-    # Create an empty builder
-    builder = Merkle.builder()
-    IO.puts("Created empty builder: count=#{builder.count}")
-
-    # Add items one at a time (simulating streaming)
-    items = [
-      %{
-        "key" => "stream-item-1",
-        "hash" => "1111111111111111111111111111111111111111111111111111111111111111"
-      },
-      %{
-        "key" => "stream-item-2",
-        "hash" => "2222222222222222222222222222222222222222222222222222222222222222"
-      },
-      %{
-        "key" => "stream-item-3",
-        "hash" => "3333333333333333333333333333333333333333333333333333333333333333"
-      }
-    ]
-
-    IO.puts("\nAdding items incrementally:")
-
-    builder =
-      Enum.reduce(items, builder, fn item, acc ->
-        new_builder = Merkle.add_entry(acc, item)
-        IO.puts("  Added #{item["key"]}, count=#{new_builder.count}")
-        new_builder
-      end)
-
-    # Finalize to build the tree
-    tree = Merkle.finalize(builder, [])
-    IO.puts("\nFinalized tree:")
-    IO.puts("  Root: #{Merkle.root(tree)}")
-    IO.puts("  Depth: #{tree.tree_depth}")
-
-    # Compare with new/1 - should produce identical tree
-    tree_from_new = Merkle.new(items)
-    roots_match = Merkle.root(tree) == Merkle.root(tree_from_new)
-    IO.puts("  Matches new/1: #{roots_match}")
-
-    # Demonstrate add_entries for batch adding
-    IO.puts("\nBatch adding with add_entries/2:")
-
-    batch_builder =
-      Merkle.builder()
-      |> Merkle.add_entries(items)
-
-    IO.puts("  Added #{batch_builder.count} items in batch")
-    batch_tree = Merkle.finalize(batch_builder, [])
-    batch_matches = Merkle.root(batch_tree) == Merkle.root(tree)
-    IO.puts("  Batch tree matches incremental: #{batch_matches}")
-
-    # Demonstrate duplicate handling
-    IO.puts("\nDuplicate handling:")
-
-    dup_builder =
-      Merkle.builder()
-      |> Merkle.add_entry(%{
-        "key" => "dup-key",
-        "hash" => "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      })
-      |> Merkle.add_entry(%{
-        "key" => "dup-key",
-        "hash" => "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      })
-
-    IO.puts("  Same key+hash added twice: count=#{dup_builder.count} (idempotent)")
-
-    # Show that different hash with same key would raise
-    IO.puts("  Same key, different hash: raises ArgumentError (fail fast)")
-    IO.puts("")
-  end
-
-  defp demo_convenience_wrappers do
-    IO.puts("Demo 6: Convenience Wrappers")
-    IO.puts("=" <> String.duplicate("=", 40))
-
-    # Sample data in different formats
-    struct_items = [
-      %{
-        id: "struct-1",
-        item_hash: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
-      },
-      %{
-        id: "struct-2",
-        item_hash: "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
-      },
-      %{
-        id: "struct-3",
-        item_hash: "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
-      }
-    ]
-
-    map_items = [
-      %{
-        "key" => "struct-1",
-        "hash" => "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
-      },
-      %{
-        "key" => "struct-2",
-        "hash" => "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
-      },
-      %{
-        "key" => "struct-3",
-        "hash" => "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
-      }
-    ]
-
-    tuple_items = [
-      {"struct-1", "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"},
-      {"struct-2", "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"},
-      {"struct-3", "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"}
-    ]
-
-    # from_stream/2 - uses extractor functions
-    IO.puts("from_stream/2 - Custom extractor functions:")
-    tree_stream = Merkle.from_stream(struct_items, key_fn: & &1.id, hash_fn: & &1.item_hash)
-    IO.puts("  Root: #{Merkle.root(tree_stream)}")
-
-    # from_maps/2 - for standard map format
-    IO.puts("\nfrom_maps/2 - Standard map format:")
-    tree_maps = Merkle.from_maps(map_items)
-    IO.puts("  Root: #{Merkle.root(tree_maps)}")
-
-    # from_tuples/2 - for {key, hash} tuple format
-    IO.puts("\nfrom_tuples/2 - Tuple format:")
-    tree_tuples = Merkle.from_tuples(tuple_items)
-    IO.puts("  Root: #{Merkle.root(tree_tuples)}")
-
-    # All should produce identical trees
-    all_match =
-      Merkle.root(tree_stream) == Merkle.root(tree_maps) and
-        Merkle.root(tree_maps) == Merkle.root(tree_tuples)
-
-    IO.puts("\nAll wrappers produce identical trees: #{all_match}")
-
-    # Works with streams (lazy evaluation)
-    IO.puts("\nStreaming with lazy evaluation:")
-
-    stream =
-      Stream.iterate(1, &(&1 + 1))
-      |> Stream.take(5)
-      |> Stream.map(fn i ->
-        %{
-          "key" => "lazy-#{String.pad_leading(Integer.to_string(i), 3, "0")}",
-          "hash" => :crypto.hash(:sha256, "data-#{i}") |> Base.encode16(case: :lower)
-        }
-      end)
-
-    tree_lazy = Merkle.from_maps(stream)
-    IO.puts("  Tree from lazy stream: root=#{String.slice(Merkle.root(tree_lazy), 0, 16)}...")
-    IO.puts("  Leaves: #{length(tree_lazy.leaves)}")
     IO.puts("")
   end
 

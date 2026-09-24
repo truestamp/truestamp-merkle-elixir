@@ -8,6 +8,27 @@ defmodule Truestamp.Merkle.TreeTest do
   alias Truestamp.Merkle.Generators
 
   describe "new/2" do
+    test "options: :sort must be a boolean, and nothing else is accepted" do
+      entries = [
+        %{"key" => "b", "hash" => String.duplicate("b", 64)},
+        %{"key" => "a", "hash" => String.duplicate("a", 64)}
+      ]
+
+      sorted = Merkle.root(Merkle.new(entries))
+      assert Merkle.root(Merkle.new(entries, sort: true)) == sorted
+      assert Merkle.root(Merkle.new(entries, sort: false)) != sorted
+
+      for bad <- [[sort: nil], [sort: "false"], [sort: 0], [sorted: false], [cap: 1]] do
+        assert_raise ArgumentError, fn -> Merkle.new(entries, bad) end
+      end
+
+      for bad <- [%{sort: false}, nil, "opts"] do
+        assert_raise ArgumentError, ~r/options must be a keyword list/, fn ->
+          Merkle.new(entries, bad)
+        end
+      end
+    end
+
     test "creates a tree with single element" do
       data = [
         %{
@@ -826,20 +847,12 @@ defmodule Truestamp.Merkle.TreeTest do
       refute Merkle.verify(padding_constant(), forged, root)
     end
 
-    test "the padding constant is refused as an entry hash on every construction surface" do
+    test "the padding constant is refused as an entry hash" do
       padhash = padding_constant()
       message = ~r/reserved Merkle padding constant/
       entry = %{"key" => "entry-1", "hash" => padhash}
 
       assert_raise ArgumentError, message, fn -> Merkle.new([entry]) end
-      assert_raise ArgumentError, message, fn -> Merkle.add_entry(Merkle.builder(), entry) end
-      assert_raise ArgumentError, message, fn -> Merkle.add_entries(Merkle.builder(), [entry]) end
-      assert_raise ArgumentError, message, fn -> Merkle.from_maps([entry]) end
-      assert_raise ArgumentError, message, fn -> Merkle.from_tuples([{"entry-1", padhash}]) end
-
-      assert_raise ArgumentError, message, fn ->
-        Merkle.from_stream([entry], key_fn: & &1["key"], hash_fn: & &1["hash"])
-      end
     end
 
     test "the padding leaf hash still verifies as a proof sibling" do

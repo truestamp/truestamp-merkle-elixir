@@ -10,7 +10,6 @@ defmodule ProofGenerationBenchmark do
 
   This script specifically focuses on measuring:
   - Proof generation performance for large trees (O(log n) per proof)
-  - Builder pattern vs new/1 performance comparison
   - Convenience wrapper performance
   """
 
@@ -25,19 +24,6 @@ defmodule ProofGenerationBenchmark do
     Enum.each(sizes, fn size ->
       IO.puts("Testing #{format_number(size)} leaf tree...")
       benchmark_tree_size(size)
-      IO.puts("")
-    end)
-
-    # Builder pattern benchmarks
-    IO.puts("\n" <> String.duplicate("=", 60))
-    IO.puts("=== Builder Pattern Benchmarks ===")
-    IO.puts(String.duplicate("=", 60) <> "\n")
-
-    builder_sizes = [1_000, 10_000, 50_000, 100_000]
-
-    Enum.each(builder_sizes, fn size ->
-      IO.puts("Testing builder pattern with #{format_number(size)} items...")
-      benchmark_builder_pattern(size)
       IO.puts("")
     end)
 
@@ -114,99 +100,6 @@ defmodule ProofGenerationBenchmark do
       # Show proof size in JSON
       json_size = JSON.encode!(sample_proof) |> String.length()
       IO.puts("    Sample proof JSON size: #{json_size} bytes")
-    end
-  end
-
-  defp benchmark_builder_pattern(size) do
-    # Generate test data
-    IO.puts("  Generating #{format_number(size)} test documents...")
-    data = generate_test_data(size)
-
-    # Also prepare data in different formats for wrapper benchmarks
-    tuple_data = Enum.map(data, fn %{"key" => k, "hash" => h} -> {k, h} end)
-    struct_data = Enum.map(data, fn %{"key" => k, "hash" => h} -> %{id: k, item_hash: h} end)
-
-    # Benchmark new/1 (baseline)
-    IO.puts("\n  Benchmark: new/1 (baseline)")
-    {new_time, tree_new} = :timer.tc(fn -> Merkle.new(data) end)
-    new_ms = new_time / 1000
-    IO.puts("    Time: #{format_time(new_ms)}")
-    IO.puts("    Root: #{String.slice(Merkle.root(tree_new), 0, 16)}...")
-
-    # Benchmark builder with add_entries
-    IO.puts("\n  Benchmark: builder + add_entries + finalize")
-
-    {builder_time, tree_builder} =
-      :timer.tc(fn ->
-        Merkle.builder()
-        |> Merkle.add_entries(data)
-        |> Merkle.finalize([])
-      end)
-
-    builder_ms = builder_time / 1000
-    IO.puts("    Time: #{format_time(builder_ms)}")
-    IO.puts("    Root: #{String.slice(Merkle.root(tree_builder), 0, 16)}...")
-    IO.puts("    Roots match: #{Merkle.root(tree_new) == Merkle.root(tree_builder)}")
-
-    # Benchmark from_maps
-    IO.puts("\n  Benchmark: from_maps/2")
-    {maps_time, tree_maps} = :timer.tc(fn -> Merkle.from_maps(data) end)
-    maps_ms = maps_time / 1000
-    IO.puts("    Time: #{format_time(maps_ms)}")
-    IO.puts("    Roots match: #{Merkle.root(tree_new) == Merkle.root(tree_maps)}")
-
-    # Benchmark from_tuples
-    IO.puts("\n  Benchmark: from_tuples/2")
-    {tuples_time, tree_tuples} = :timer.tc(fn -> Merkle.from_tuples(tuple_data) end)
-    tuples_ms = tuples_time / 1000
-    IO.puts("    Time: #{format_time(tuples_ms)}")
-    IO.puts("    Roots match: #{Merkle.root(tree_new) == Merkle.root(tree_tuples)}")
-
-    # Benchmark from_stream with extractors
-    IO.puts("\n  Benchmark: from_stream/2 (with extractor functions)")
-
-    {stream_time, tree_stream} =
-      :timer.tc(fn ->
-        Merkle.from_stream(struct_data, key_fn: & &1.id, hash_fn: & &1.item_hash)
-      end)
-
-    stream_ms = stream_time / 1000
-    IO.puts("    Time: #{format_time(stream_ms)}")
-    IO.puts("    Roots match: #{Merkle.root(tree_new) == Merkle.root(tree_stream)}")
-
-    # Benchmark incremental add_entry (simulating streaming)
-    IO.puts("\n  Benchmark: builder + incremental add_entry (first 1000 items)")
-    sample_data = Enum.take(data, 1000)
-
-    {incremental_time, _builder} =
-      :timer.tc(fn ->
-        Enum.reduce(sample_data, Merkle.builder(), fn item, acc ->
-          Merkle.add_entry(acc, item)
-        end)
-      end)
-
-    incremental_ms = incremental_time / 1000
-    avg_per_item = incremental_ms / 1000
-    IO.puts("    Time for 1000 items: #{format_time(incremental_ms)}")
-    IO.puts("    Average per item: #{format_time(avg_per_item)}")
-    IO.puts("    Projected for #{format_number(size)}: #{format_time(avg_per_item * size)}")
-
-    # Summary comparison
-    IO.puts("\n  Performance Summary:")
-    IO.puts("    new/1:        #{format_time(new_ms)} (baseline)")
-    IO.puts("    from_maps:    #{format_time(maps_ms)} (#{format_ratio(maps_ms, new_ms)})")
-    IO.puts("    from_tuples:  #{format_time(tuples_ms)} (#{format_ratio(tuples_ms, new_ms)})")
-    IO.puts("    from_stream:  #{format_time(stream_ms)} (#{format_ratio(stream_ms, new_ms)})")
-    IO.puts("    builder:      #{format_time(builder_ms)} (#{format_ratio(builder_ms, new_ms)})")
-  end
-
-  defp format_ratio(time, baseline) do
-    ratio = time / baseline
-
-    cond do
-      ratio < 1.0 -> "#{Float.round((1 - ratio) * 100, 1)}% faster"
-      ratio > 1.0 -> "#{Float.round((ratio - 1) * 100, 1)}% slower"
-      true -> "same"
     end
   end
 

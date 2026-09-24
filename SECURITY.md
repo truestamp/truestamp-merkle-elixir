@@ -120,7 +120,7 @@ likewise specific to this library.
 Every hash crossing the API is exactly 64 lowercase hex characters, on the way in and on
 the way out: the digests you supply for entries, the root hashes you get back, leaf values,
 and proof siblings alike. Non-canonical input is refused, never normalized. `new/2` and the
-builder raise `ArgumentError`; `walk/3` returns an error and `verify/4` returns `false`.
+raises `ArgumentError`; `walk/3` returns an error and `verify/4` returns `false`.
 
 Refusing rather than downcasing is deliberate. Two spellings of the same hash would be
 two distinct leaves in the leaf index and two distinct byte strings on the wire, and a
@@ -154,10 +154,9 @@ absent from the leaf index and `proof/2` will not emit a proof for one. The `__p
 prefix, in any case, stays reserved: construction refuses a caller's key that begins with
 it.
 
-`PADHASH` is refused on both ends. Construction raises `ArgumentError` on it on every
-surface (`new/2`, `add_entry/2`, `add_entries/2`, `from_stream/2`, `from_maps/2`,
-`from_tuples/2`). `walk/3` returns `{:error, :reserved_leaf}` and `verify/4`
-returns `false` when it is presented as the value being proved.
+`PADHASH` is refused on both ends. `new/2` raises `ArgumentError` on it, `walk/3` returns
+`{:error, :reserved_leaf}` and `verify/4` returns `false` when it is presented as the value
+being proved.
 
 Both halves are needed. The attack is cheap and requires no cryptography: whoever owns the
 last real leaf of a padded tree can assemble a complete, valid path for a padding slot out
@@ -242,8 +241,7 @@ about a trillion leaves, and memory is exhausted long before that, at roughly 30
 retained per million leaves plus comparable transient use during construction.
 
 Construction has no limit of its own on the number of entries. `new/2` will attempt
-whatever list it is handed, and the builder will accumulate whatever is fed to it, so tree
-construction belongs behind input you control. Construction also raises rather than
+whatever list it is handed, so tree construction belongs behind input you control. Construction also raises rather than
 returning errors: `ArgumentError` for an invalid key, an invalid hash, the reserved padding
 constant, a duplicate key, or a depth over the cap.
 

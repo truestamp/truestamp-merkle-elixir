@@ -4,8 +4,8 @@
 defmodule Truestamp.Merkle.Input do
   @moduledoc false
 
-  # The rules a caller's entries must meet before any of them is hashed. Every
-  # construction path runs them, and each refusal raises ArgumentError.
+  # The rules a caller's entries must meet before any of them is hashed. Each refusal
+  # raises ArgumentError.
 
   alias Truestamp.Merkle.Hash
 
@@ -23,7 +23,7 @@ defmodule Truestamp.Merkle.Input do
           "Invalid input entry format. Expected map with \"key\" and \"hash\" keys, got: #{inspect(invalid, limit: 10)}"
   end
 
-  def validate_key!(key) when is_binary(key) do
+  defp validate_key!(key) when is_binary(key) do
     if String.length(key) > @max_key_length do
       raise ArgumentError,
             "Invalid key length. Expected maximum #{@max_key_length} characters, got: #{String.length(key)}"
@@ -47,11 +47,11 @@ defmodule Truestamp.Merkle.Input do
     end
   end
 
-  def validate_key!(invalid) do
+  defp validate_key!(invalid) do
     raise ArgumentError, "Invalid key type. Expected string, got: #{inspect(invalid, limit: 10)}"
   end
 
-  def validate_digest!(digest) when is_binary(digest) do
+  defp validate_digest!(digest) when is_binary(digest) do
     unless Hash.digest_hex?(digest) do
       raise ArgumentError,
             "Invalid hash format. Expected #{Hash.digest_hex_chars()}-character lowercase hex SHA-256 hash (#{Hash.digest_bytes()} bytes), got: #{inspect(digest, limit: 10)}"
@@ -67,7 +67,7 @@ defmodule Truestamp.Merkle.Input do
     end
   end
 
-  def validate_digest!(invalid) do
+  defp validate_digest!(invalid) do
     raise ArgumentError, "Invalid hash type. Expected string, got: #{inspect(invalid, limit: 10)}"
   end
 

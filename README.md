@@ -209,9 +209,8 @@ three builds, and the proof and verify times are means over up to 10,000 random 
 - Timings vary between runs by a few percent, and by more on a busy machine.
 
 Two more scripts cover the rest: `mix run bench/proof_generation_benchmark.exs` times
-proof generation in bulk and compares the ways to build a tree (`new/2`, the builder, and
-the stream, map and tuple wrappers), and `mix run examples/truestamp_merkle_demo.exs`
-walks through the API.
+proof generation in bulk, and `mix run examples/truestamp_merkle_demo.exs` walks through
+the API.
 
 ## License
 
