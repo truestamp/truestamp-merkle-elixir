@@ -43,17 +43,16 @@ defmodule TruestampMerkleDemo do
     IO.puts("• Pure Elixir implementation (no external dependencies)")
     IO.puts("• Second preimage attack resistance via domain separation")
     IO.puts("• Deterministic tree construction and hashing")
-    IO.puts("• Ultra-compact proof structure (direction:hash strings)")
+    IO.puts("• RFC 9162 inclusion proofs: leaf index, tree size and audit path")
     IO.puts("• Efficient performance for large datasets")
     IO.puts("• Simple API designed for easy TypeScript porting")
-    IO.puts("• Convenience wrappers for various input formats")
   end
 
   defp demo_basic_functionality do
     IO.puts("Demo 1: Basic Functionality")
     IO.puts("=" <> String.duplicate("=", 40))
 
-    # Create sample data with proper UUIDv7 keys and SHA-256 hashes
+    # Create sample data with UUID-shaped keys and SHA-256 hashes
     data = [
       %{
         "key" => "01234567-89ab-cdef-0123-456789abcdef",
@@ -87,7 +86,7 @@ defmodule TruestampMerkleDemo do
       proof = Merkle.proof(tree, key)
       valid = Merkle.verify(hash, proof, root)
 
-      IO.puts("#{key}: proof size #{length(proof)}, valid: #{valid}")
+      IO.puts("#{key}: #{length(proof.path)} path nodes, valid: #{valid}")
     end)
 
     IO.puts("")
@@ -124,8 +123,12 @@ defmodule TruestampMerkleDemo do
     IO.puts("\nDecoded proof structure:")
     IO.inspect(decoded_proof, pretty: true)
 
-    # No conversion needed - strings are preserved in JSON perfectly
-    normalized_proof = decoded_proof
+    # JSON gives string keys; the proof's fields are atoms.
+    normalized_proof = %{
+      leaf_index: decoded_proof["leaf_index"],
+      tree_size: decoded_proof["tree_size"],
+      path: decoded_proof["path"]
+    }
 
     # Verify the roundtrip worked
     root = Merkle.root(tree)
@@ -155,7 +158,7 @@ defmodule TruestampMerkleDemo do
     IO.puts("Demo 3: Determinism")
     IO.puts("=" <> String.duplicate("=", 40))
 
-    # Create the same data in different orders with proper UUIDv7 keys
+    # Create the same data in different orders
     base_data = [
       %{
         "key" => "zebra567-89ab-cdef-0123-456789abcdef",
@@ -275,7 +278,7 @@ defmodule TruestampMerkleDemo do
     Enum.each(sizes, fn size ->
       IO.puts("Testing with #{format_number(size)} elements...")
 
-      # Generate test data with proper UUIDv7 format keys
+      # Generate test data with UUID-shaped keys
       data =
         Enum.map(1..size, fn i ->
           key = "#{String.pad_leading("#{i}", 8, "0")}-89ab-cdef-0123-456789abcdef"
@@ -312,20 +315,21 @@ defmodule TruestampMerkleDemo do
       IO.puts("  Tree creation: #{format_time(tree_ms)}")
       IO.puts("  Tree depth: #{tree.tree_depth}")
       IO.puts("  Proof generation: #{format_time(proof_ms)}")
-      IO.puts("  Proof length: #{length(proof)} elements")
+      IO.puts("  Proof length: #{length(proof.path)} nodes")
       IO.puts("  Proof size (JSON): #{proof_bytes} bytes")
-      IO.puts("  Avg bytes per element: #{Float.round(proof_bytes / length(proof), 1)}")
+      IO.puts("  Proof size (binary): #{byte_size(Merkle.proof_to_binary(proof))} bytes")
       IO.puts("  Verification: #{format_time(verify_ms)} (valid: #{result})")
 
       # For the largest tree, show a sample proof
       if size == 100_000 do
         IO.puts("\n  Sample proof structure for #{random_key}:")
 
-        Enum.with_index(proof, 1)
-        |> Enum.each(fn {proof_step, index} ->
-          [direction, hash] = String.split(proof_step, ":", parts: 2)
-          short_hash = String.slice(hash, 0, 8) <> "..." <> String.slice(hash, -8, 8)
-          IO.puts("    #{index}. #{direction}:#{short_hash}")
+        IO.puts("    leaf_index: #{proof.leaf_index}, tree_size: #{proof.tree_size}")
+
+        Enum.with_index(proof.path, 1)
+        |> Enum.each(fn {node, index} ->
+          short_hash = String.slice(node, 0, 8) <> "..." <> String.slice(node, -8, 8)
+          IO.puts("    #{index}. #{short_hash}")
         end)
 
         IO.puts("  Full JSON proof: #{json_proof}")

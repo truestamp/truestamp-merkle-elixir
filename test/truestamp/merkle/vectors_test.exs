@@ -3,24 +3,27 @@
 
 defmodule Truestamp.Merkle.VectorsTest do
   # The library must reproduce every value in vectors/merkle.json, which
-  # vectors/generate.exs writes from the README's contract without using the
-  # library.
+  # vectors/generate.exs writes from RFC 9162 without using the library.
   use ExUnit.Case, async: true
 
   alias Truestamp.Merkle
+  alias Truestamp.Merkle.RFC9162
 
   @vectors_path Path.expand("../../../vectors/merkle.json", __DIR__)
-  @readme_path Path.expand("../../../README.md", __DIR__)
   @external_resource @vectors_path
-  @external_resource @readme_path
   @vectors @vectors_path |> File.read!() |> JSON.decode!()
+
+  @fields %{"leaf_index" => :leaf_index, "tree_size" => :tree_size, "path" => :path}
 
   defp entries(tree),
     do: Enum.map(tree["entries"], &%{"key" => &1["key"], "hash" => &1["digest"]})
 
+  # A JSON proof object as the library takes it. Anything else is passed as it stands.
+  defp to_proof(%{} = json), do: Map.new(json, fn {key, value} -> {@fields[key], value} end)
+  defp to_proof(other), do: other
+
   test "every section the tests loop over has cases, so no loop can pass empty" do
-    for section <-
-          ~w(trees entry_refusals walk_accepts walk_refusals binary_refusals base64url_refusals) do
+    for section <- ~w(trees entry_refusals walk_accepts walk_refusals binary_refusals) do
       assert [_ | _] = @vectors[section], section
     end
 
@@ -30,19 +33,22 @@ defmodule Truestamp.Merkle.VectorsTest do
   end
 
   describe "constants" do
-    test "the empty root, the reserved digest and the padding leaf" do
-      constants = @vectors["constants"]
+    test "the empty root, the default step cap and the largest tree size" do
+      %{"empty_root" => empty_root, "max_steps" => cap, "max_tree_size" => max_size} =
+        @vectors["constants"]
 
-      assert Merkle.root(Merkle.new([])) == constants["empty_root"]
-      assert Merkle.walk(constants["reserved_digest"], []) == {:error, :reserved_leaf}
+      assert Merkle.root(Merkle.new([])) == empty_root
 
-      assert_raise ArgumentError, fn ->
-        Merkle.new([%{"key" => "k", "hash" => constants["reserved_digest"]}])
-      end
+      digest = RFC9162.hex(RFC9162.sha256("d"))
+      path = for i <- 1..cap, do: RFC9162.hex(RFC9162.sha256("n#{i}"))
+      largest = %{leaf_index: 0, tree_size: max_size, path: path}
 
-      padding_step = "r:" <> constants["padding_leaf"]
-      paths = Enum.flat_map(@vectors["trees"], & &1["paths"])
-      assert Enum.any?(paths, &(padding_step in &1["steps"]))
+      # The largest size takes exactly the default cap of steps, so the default never
+      # refuses a proof the size field can express.
+      assert {:ok, _root} = Merkle.walk(digest, largest)
+      assert {:ok, _root} = Merkle.walk(digest, largest, max_steps: cap)
+      assert Merkle.walk(digest, %{largest | tree_size: max_size + 1}) == {:error, :invalid_proof}
+      assert_raise ArgumentError, fn -> Merkle.walk(digest, largest, max_steps: cap + 1) end
     end
   end
 
@@ -50,32 +56,24 @@ defmodule Truestamp.Merkle.VectorsTest do
     for tree <- @vectors["trees"] do
       @tree tree
 
-      test "#{tree["name"]}: root, depth, and every path in every form" do
+      test "#{tree["name"]}: root, depth, size, and every path in both forms" do
         built = Merkle.new(entries(@tree))
         root = @tree["root"]
 
         assert Merkle.root(built) == root
         assert built.tree_depth == @tree["depth"]
-
-        if @tree["padded_size"] > 0 do
-          assert @tree["padded_size"] == Integer.pow(2, @tree["depth"])
-        end
-
-        # Strict RFC 6962 agrees exactly when no padding was needed.
-        assert @tree["rfc6962_root"] == root ==
-                 (@tree["padded_size"] == length(@tree["entries"]))
+        assert length(built.leaves) == @tree["tree_size"]
 
         for path <- @tree["paths"] do
-          steps = path["steps"]
+          proof = to_proof(Map.take(path, Map.keys(@fields)))
           bytes = Base.decode16!(path["binary_hex"], case: :lower)
 
-          assert Merkle.proof(built, path["key"]) == steps
-          assert Merkle.walk(path["digest"], steps) == {:ok, root}
-          assert Merkle.verify(path["digest"], steps, root)
-          assert Merkle.steps_to_binary(steps) == bytes
-          assert Merkle.steps_from_binary(bytes) == {:ok, steps}
-          assert Merkle.encode_proof_base64(steps) == path["base64url"]
-          assert Merkle.decode_proof_base64(path["base64url"]) == {:ok, steps}
+          assert proof.tree_size == @tree["tree_size"]
+          assert Merkle.proof(built, path["key"]) == proof
+          assert Merkle.walk(path["digest"], proof) == {:ok, root}
+          assert Merkle.verify(path["digest"], proof, root)
+          assert Merkle.proof_to_binary(proof) == bytes
+          assert Merkle.proof_from_binary(bytes) == {:ok, proof}
         end
       end
     end
@@ -86,11 +84,26 @@ defmodule Truestamp.Merkle.VectorsTest do
       @accept accept
 
       test "walk accepts: #{accept["name"]}" do
-        %{"digest" => digest, "steps" => steps, "max_steps" => cap, "root" => root} = @accept
+        %{"digest" => digest, "proof" => json, "max_steps" => cap, "root" => root} = @accept
+        proof = to_proof(json)
 
-        assert Merkle.walk(digest, steps, max_steps: cap) == {:ok, root}
-        assert Merkle.verify(digest, steps, root, max_steps: cap)
+        assert Merkle.walk(digest, proof, max_steps: cap) == {:ok, root}
+        assert Merkle.verify(digest, proof, root, max_steps: cap)
+
+        bytes = Base.decode16!(@accept["binary_hex"], case: :lower)
+        assert Merkle.proof_to_binary(proof) == bytes
+        assert Merkle.proof_from_binary(bytes) == {:ok, proof}
       end
+    end
+
+    test "the size-3 path claimed at size 4 reaches the leaf-3 tree's root" do
+      accept = Enum.find(@vectors["walk_accepts"], &String.starts_with?(&1["name"], "a size-3"))
+      tree = Enum.find(@vectors["trees"], &(&1["name"] == "leaf-3"))
+
+      # The root does not fix the tree size; a verifier takes the size from where it
+      # takes the root.
+      assert accept["root"] == tree["root"]
+      assert accept["proof"]["tree_size"] != tree["tree_size"]
     end
   end
 
@@ -107,87 +120,59 @@ defmodule Truestamp.Merkle.VectorsTest do
       @refusal refusal
 
       test "walk refuses: #{refusal["name"]}" do
-        %{"digest" => digest, "steps" => steps, "max_steps" => cap} = @refusal
+        %{"digest" => digest, "proof" => json, "max_steps" => cap} = @refusal
 
-        assert {:error, reason} = Merkle.walk(digest, steps, max_steps: cap)
+        assert {:error, reason} = Merkle.walk(digest, to_proof(json), max_steps: cap)
         assert Atom.to_string(reason) == @refusal["error"]
       end
     end
 
-    test "verify refuses what walk refuses, even against the root the path would reach" do
+    test "verify refuses what walk refuses, even against the root the proof would reach" do
       reachable =
-        for %{"digest" => digest, "steps" => steps, "max_steps" => cap} <-
+        for %{"name" => name, "digest" => digest, "proof" => json, "max_steps" => cap} <-
               @vectors["walk_refusals"],
-            {:ok, root} <- [unchecked_root(digest, steps)] do
-          refute Merkle.verify(digest, steps, root, max_steps: cap), inspect({digest, cap})
-          root
+            {:ok, root} <- [unchecked_root(digest, json)] do
+          refute Merkle.verify(digest, to_proof(json), root, max_steps: cap), name
+          name
         end
 
-      # The digest, reserved, cap and case refusals all have such a root.
-      assert length(reachable) >= 8
+      # The uppercase digest, the uppercase node and the whole path under a small cap.
+      assert length(reachable) >= 3, inspect(reachable)
     end
 
     test "the binary decoder refuses every non-canonical binary, naming why" do
       for %{"name" => name, "binary_hex" => hex, "error" => error} <-
             @vectors["binary_refusals"] do
         bytes = Base.decode16!(hex, case: :lower)
-        assert {:error, reason} = Merkle.steps_from_binary(bytes), name
-        assert Atom.to_string(reason) == error, name
-
-        assert {:error, _} = Merkle.decode_proof_base64(Base.url_encode64(bytes, padding: false)),
-               name
-      end
-    end
-
-    test "the base64url decoder refuses every non-canonical spelling" do
-      for %{"name" => name, "base64url" => text, "error" => error} <-
-            @vectors["base64url_refusals"] do
-        assert {:error, reason} = Merkle.decode_proof_base64(text), name
+        assert {:error, reason} = Merkle.proof_from_binary(bytes), name
         assert Atom.to_string(reason) == error, name
       end
     end
   end
 
-  test "every hash and path the README prints is in the vectors file" do
-    vectors = File.read!(@vectors_path)
-    readme = File.read!(@readme_path)
-    known = Regex.scan(~r/\b[0-9a-f]{64}\b/, readme) |> List.flatten() |> Enum.uniq()
-
-    assert known != []
-    assert Enum.reject(known, &String.contains?(vectors, &1)) == []
-    assert String.contains?(vectors, "AQHXisvDVvoXHOQLty_6dMveBsNq78JniprxjTl1WB6Wnw")
-  end
-
-  # Where a refused path would lead if nothing checked it: any case of hex, any number of
-  # steps, the reserved digest allowed. :error when the bytes cannot even be read.
-  defp unchecked_root(digest, steps) do
+  # Where a refused proof would lead if nothing but the RFC's loop checked it: hex in
+  # any case, no step cap. :error when the loop fails or the proof cannot be read.
+  defp unchecked_root(digest, %{"leaf_index" => index, "tree_size" => size, "path" => path})
+       when is_integer(index) and index >= 0 and is_integer(size) and is_list(path) do
     with {:ok, leaf} <- Base.decode16(digest, case: :mixed),
-         {:ok, parsed} <- unchecked_steps(steps, []) do
-      start = :crypto.hash(:sha256, <<0x00>> <> leaf)
-
-      root =
-        Enum.reduce(parsed, start, fn
-          {:l, sibling}, acc -> :crypto.hash(:sha256, <<0x01>> <> sibling <> acc)
-          {:r, sibling}, acc -> :crypto.hash(:sha256, <<0x01>> <> acc <> sibling)
-        end)
-
-      {:ok, Base.encode16(root, case: :lower)}
+         {:ok, nodes} <- decode_nodes(path, []),
+         root when is_binary(root) <- RFC9162.walk(leaf, index, size, nodes) do
+      {:ok, RFC9162.hex(root)}
     else
       _ -> :error
     end
   end
 
-  defp unchecked_steps([], parsed), do: {:ok, Enum.reverse(parsed)}
+  defp unchecked_root(_digest, _json), do: :error
 
-  defp unchecked_steps([<<d, ?:, hex::binary-size(64)>> | rest], parsed) when d in ~c"lLrR" do
-    case Base.decode16(hex, case: :mixed) do
-      {:ok, sibling} ->
-        unchecked_steps(rest, [{if(d in ~c"lL", do: :l, else: :r), sibling} | parsed])
+  defp decode_nodes([], nodes), do: {:ok, Enum.reverse(nodes)}
 
-      :error ->
-        :error
+  defp decode_nodes([node | rest], nodes) when is_binary(node) do
+    case Base.decode16(node, case: :mixed) do
+      {:ok, bytes} -> decode_nodes(rest, [bytes | nodes])
+      :error -> :error
     end
   end
 
-  defp unchecked_steps(_steps, _parsed), do: :error
+  defp decode_nodes(_path, _nodes), do: :error
 end

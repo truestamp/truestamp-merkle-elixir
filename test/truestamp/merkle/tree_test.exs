@@ -3,20 +3,107 @@
 
 defmodule Truestamp.Merkle.TreeTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
 
   alias Truestamp.Merkle
-  alias Truestamp.Merkle.Generators
+  alias Truestamp.Merkle.{Generators, RFC9162}
 
-  describe "new/2" do
-    test "options: :sort must be a boolean, and nothing else is accepted" do
-      entries = [
-        %{"key" => "b", "hash" => String.duplicate("b", 64)},
-        %{"key" => "a", "hash" => String.duplicate("a", 64)}
-      ]
+  @digest "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
 
-      sorted = Merkle.root(Merkle.new(entries))
-      assert Merkle.root(Merkle.new(entries, sort: true)) == sorted
-      assert Merkle.root(Merkle.new(entries, sort: false)) != sorted
+  defp entry(key, digest \\ @digest), do: %{"key" => key, "hash" => digest}
+
+  describe "the RFC 9162 tree" do
+    test "every size from 0 to 300 has the root, depth and levels the RFC defines" do
+      for n <- 0..300 do
+        entries = RFC9162.entries(n)
+        tree = Merkle.new(entries)
+
+        assert Merkle.root(tree) == RFC9162.hex(RFC9162.mth(RFC9162.digests(entries))), "n=#{n}"
+
+        depth = if n <= 1, do: 0, else: Enum.find(1..10, &(Bitwise.bsl(1, &1) >= n))
+        assert tree.tree_depth == depth, "n=#{n}"
+
+        if n > 0 do
+          # No padding: the bottom level holds exactly the entries' leaves.
+          assert tuple_size(hd(tree.tree_levels)) == n
+          assert length(tree.tree_levels) == depth + 1
+        end
+      end
+    end
+
+    test "the empty tree's root is SHA-256 of no bytes" do
+      tree = Merkle.new([])
+      assert Merkle.root(tree) == RFC9162.hex(:crypto.hash(:sha256, <<>>))
+      assert tree.tree_depth == 0
+      assert Merkle.proof(tree, "any") == nil
+    end
+
+    test "a one-entry tree's root is its leaf hash, SHA-256(0x00 || digest)" do
+      tree = Merkle.new([entry("only")])
+      expected = RFC9162.sha256(<<0x00>> <> RFC9162.unhex(@digest))
+      assert Merkle.root(tree) == RFC9162.hex(expected)
+    end
+
+    test "three entries: the third leaf is carried up and pairs with the first two's node" do
+      [a, b, c] = entries = RFC9162.entries(3)
+      [la, lb, lc] = Enum.map([a, b, c], &RFC9162.sha256(<<0x00>> <> RFC9162.unhex(&1["hash"])))
+      node = RFC9162.sha256(<<0x01>> <> la <> lb)
+      expected = RFC9162.sha256(<<0x01>> <> node <> lc)
+
+      assert Merkle.root(Merkle.new(entries)) == RFC9162.hex(expected)
+    end
+
+    test "leaves and the index hold the entries in leaf order" do
+      tree = Merkle.new([entry("b", String.duplicate("b", 64)), entry("a")])
+
+      assert tree.leaves == [{"a", @digest}, {"b", String.duplicate("b", 64)}]
+      assert tree.leaf_index == %{"a" => 0, "b" => 1}
+    end
+
+    test "root/1 is 64 lowercase hex characters" do
+      assert Merkle.root(Merkle.new(RFC9162.entries(5))) =~ ~r/\A[0-9a-f]{64}\z/
+    end
+  end
+
+  describe "sorting" do
+    test "entries are sorted byte-wise by key: case, punctuation and digits as bytes" do
+      keys = ["b", "B", "A", "_x", "-x", ".x", "a", "a0", "10", "9"]
+      tree = Merkle.new(Enum.map(keys, &entry/1))
+
+      assert Enum.map(tree.leaves, &elem(&1, 0)) ==
+               ["-x", ".x", "10", "9", "A", "B", "_x", "a", "a0", "b"]
+    end
+
+    test "sort: false keeps the list's order, and a different order gives a different root" do
+      entries = RFC9162.entries(5)
+      reversed = Enum.reverse(entries)
+
+      assert Merkle.root(Merkle.new(entries)) == Merkle.root(Merkle.new(reversed))
+
+      unsorted = Merkle.new(reversed, sort: false)
+      assert Enum.map(unsorted.leaves, &elem(&1, 0)) == Enum.map(reversed, & &1["key"])
+
+      assert Merkle.root(unsorted) ==
+               RFC9162.hex(RFC9162.mth(RFC9162.digests(reversed)))
+
+      refute Merkle.root(unsorted) == Merkle.root(Merkle.new(entries))
+    end
+
+    property "the root does not depend on the input order" do
+      check all(
+              entries <- list_of(Generators.entry(), min_length: 1, max_length: 40),
+              unique = Enum.uniq_by(entries, & &1["key"])
+            ) do
+        assert Merkle.root(Merkle.new(unique)) == Merkle.root(Merkle.new(Enum.shuffle(unique)))
+      end
+    end
+  end
+
+  describe "options" do
+    test ":sort must be a boolean, and nothing else is accepted" do
+      entries = [entry("b", String.duplicate("b", 64)), entry("a")]
+
+      assert Merkle.root(Merkle.new(entries, sort: true)) == Merkle.root(Merkle.new(entries))
 
       for bad <- [[sort: nil], [sort: "false"], [sort: 0], [sorted: false], [cap: 1]] do
         assert_raise ArgumentError, fn -> Merkle.new(entries, bad) end
@@ -28,902 +115,93 @@ defmodule Truestamp.Merkle.TreeTest do
         end
       end
     end
+  end
 
-    test "creates a tree with single element" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
+  describe "entry rules" do
+    test "keys: 1 to 36 characters from letters, digits, . _ and -" do
+      assert %Merkle{} = Merkle.new([entry(String.duplicate("k", 36))])
+      assert %Merkle{} = Merkle.new([entry("A-z_0.9")])
 
-      tree = Merkle.new(data)
-
-      assert %Merkle{} = tree
-      assert is_binary(tree.root_hash)
-      # SHA-256 binary should be 32 bytes, hex representation should be 64 chars
-      assert byte_size(tree.root_hash) == 32
-      assert String.length(Merkle.root(tree)) == 64
-      assert tree.tree_depth == 0
-
-      assert tree.leaves == [
-               {"test-key-1", "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}
-             ]
-    end
-
-    test "creates a tree with multiple elements" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-xyz",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      assert %Merkle{} = tree
-      assert is_binary(tree.root_hash)
-      # SHA-256 binary should be 32 bytes, hex representation should be 64 chars
-      assert byte_size(tree.root_hash) == 32
-      assert String.length(Merkle.root(tree)) == 64
-      assert tree.tree_depth == 1
-      assert length(tree.leaves) == 2
-    end
-
-    test "raises for a duplicate key with different hashes" do
-      data = [
-        %{
-          "key" => "dup-key",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "other-key",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        },
-        %{
-          "key" => "dup-key",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        }
-      ]
-
-      assert_raise ArgumentError, ~r/Duplicate key in input data: "dup-key"/, fn ->
-        Merkle.new(data)
+      assert_raise ArgumentError, ~r/Invalid key length/, fn ->
+        Merkle.new([entry(String.duplicate("k", 37))])
       end
-    end
 
-    test "raises for a duplicate key even when the hashes match" do
-      hash = "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-
-      data = [
-        %{"key" => "dup-key", "hash" => hash},
-        %{"key" => "dup-key", "hash" => hash}
-      ]
-
-      assert_raise ArgumentError, ~r/Duplicate key in input data: "dup-key"/, fn ->
-        Merkle.new(data)
+      for bad <- ["", "a b", "a/b", "é", "a\n"] do
+        assert_raise ArgumentError, ~r/Invalid key format/, fn -> Merkle.new([entry(bad)]) end
       end
-    end
 
-    test "raises for a duplicate key with sort: false" do
-      data = [
-        %{
-          "key" => "z-key",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "a-key",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "z-key",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      assert_raise ArgumentError, ~r/Duplicate key in input data: "z-key"/, fn ->
-        Merkle.new(data, sort: false)
+      assert_raise ArgumentError, ~r/leading or trailing spaces/, fn ->
+        Merkle.new([entry(" a")])
       end
+
+      assert_raise ArgumentError, ~r/Invalid key type/, fn -> Merkle.new([entry(:a)]) end
     end
 
-    test "accepts distinct keys that share the same hash" do
-      hash = "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-
-      tree =
-        Merkle.new([
-          %{"key" => "key-a", "hash" => hash},
-          %{"key" => "key-b", "hash" => hash}
-        ])
-
-      assert length(tree.leaves) == 2
-      assert map_size(tree.leaf_index) == 2
-
-      root = Merkle.root(tree)
-      assert Merkle.verify(hash, Merkle.proof(tree, "key-a"), root)
-      assert Merkle.verify(hash, Merkle.proof(tree, "key-b"), root)
-    end
-
-    test "every accepted leaf is provable" do
-      data =
-        for i <- 1..64 do
-          %{
-            "key" => "leaf-#{i}",
-            "hash" => :crypto.hash(:sha256, "leaf-#{i}") |> Base.encode16(case: :lower)
-          }
+    test "digests: exactly 64 lowercase hex characters" do
+      for bad <- [
+            String.upcase(@digest),
+            @digest <> "\n",
+            binary_part(@digest, 0, 63),
+            @digest <> "0",
+            "zz" <> binary_part(@digest, 2, 62)
+          ] do
+        assert_raise ArgumentError, ~r/Invalid hash format/, fn ->
+          Merkle.new([entry("a", bad)])
         end
+      end
 
-      tree = Merkle.new(data)
+      assert_raise ArgumentError, ~r/Invalid hash type/, fn -> Merkle.new([entry("a", 7)]) end
+    end
+
+    test "each key once: a repeated key raises, whether or not the digests agree" do
+      for second <- [@digest, String.duplicate("b", 64)], sort <- [true, false] do
+        assert_raise ArgumentError, ~r/Duplicate key in input data: "dup"/, fn ->
+          Merkle.new([entry("dup"), entry("other"), entry("dup", second)], sort: sort)
+        end
+      end
+    end
+
+    test "no key prefix or digest is reserved" do
+      zero_zero = RFC9162.hex(RFC9162.sha256(<<0, 0>>))
+      entries = [entry("__pad__0", zero_zero), entry("__PAD__1"), entry("b")]
+      tree = Merkle.new(entries)
       root = Merkle.root(tree)
 
-      for %{"key" => key, "hash" => hash} <- data do
-        assert Merkle.verify(hash, Merkle.proof(tree, key), root), "#{key} is not provable"
+      assert root == RFC9162.hex(RFC9162.mth(RFC9162.digests(Enum.sort_by(entries, & &1["key"]))))
+
+      for %{"key" => key, "hash" => digest} <- entries do
+        assert Merkle.verify(digest, Merkle.proof(tree, key), root)
       end
     end
 
-    test "sorts input by key deterministically" do
-      data1 = [
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
+    test "two keys may share a digest, and each is provable" do
+      tree = Merkle.new([entry("a"), entry("b")])
+      root = Merkle.root(tree)
 
-      data2 = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree1 = Merkle.new(data1)
-      tree2 = Merkle.new(data2)
-
-      # Same data in different order should produce identical trees
-      assert tree1.root_hash == tree2.root_hash
-      assert tree1.leaves == tree2.leaves
-
-      assert tree1.leaves == [
-               {"test-key-a", "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"},
-               {"test-key-b", "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"},
-               {"test-key-c", "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}
-             ]
-    end
-
-    test "pads to power of 2 for balanced tree" do
-      # 3 elements should be padded to 4
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      # log2(4) = 2
-      assert tree.tree_depth == 2
-      # Original data preserved
-      assert length(tree.leaves) == 3
-    end
-
-    test "handles empty tree correctly" do
-      tree = Merkle.new([])
-
-      # Empty tree root should be HASH("") - SHA256 of empty string
-      expected_root = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-      assert Merkle.root(tree) == expected_root
-
-      # Empty tree has depth 0
-      assert tree.tree_depth == 0
-
-      # Empty tree has no leaves
-      assert tree.leaves == []
-
-      # Proof for any key should return nil
-      assert Merkle.proof(tree, "any-key") == nil
-      assert Merkle.proof(tree, "00000000-0000-0000-0000-000000000000") == nil
-    end
-
-    test "raises error for invalid key format" do
-      data = [
-        %{
-          "key" => "INVALID_KEY_FORMAT!",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      assert_raise ArgumentError, ~r/Invalid key format/, fn ->
-        Merkle.new(data)
+      for key <- ["a", "b"] do
+        assert Merkle.verify(@digest, Merkle.proof(tree, key), root)
       end
     end
 
-    test "raises error for invalid hash format" do
-      data = [%{"key" => "test-key-1", "hash" => "invalid_hash"}]
+    test "input that is not a list of entry maps" do
+      for bad <- [%{}, "entries", nil] do
+        assert_raise ArgumentError, ~r/Invalid input data/, fn -> Merkle.new(bad) end
+      end
 
+      for bad <- [
+            [:not_a_map],
+            [%{"key" => "a"}],
+            [%{"hash" => @digest}],
+            [%{key: "a", hash: @digest}]
+          ] do
+        assert_raise ArgumentError, ~r/Invalid input entry format/, fn -> Merkle.new(bad) end
+      end
+    end
+
+    test "every entry is checked, not just the first" do
       assert_raise ArgumentError, ~r/Invalid hash format/, fn ->
-        Merkle.new(data)
-      end
-    end
-
-    test "raises the format error for a hash with a trailing newline" do
-      hash = "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-      data = [%{"key" => "test-key-1", "hash" => hash <> "\n"}]
-
-      # The complaint must come from the format check, not from Base.decode16!
-      # further down the line.
-      assert_raise ArgumentError, ~r/Invalid hash format/, fn ->
-        Merkle.new(data)
-      end
-    end
-
-    test "raises error for missing key field" do
-      data = [%{"hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}]
-
-      assert_raise ArgumentError, ~r/Invalid input entry format/, fn ->
-        Merkle.new(data)
-      end
-    end
-
-    test "raises error for missing hash field" do
-      data = [%{"key" => "test-key-1"}]
-
-      assert_raise ArgumentError, ~r/Invalid input entry format/, fn ->
-        Merkle.new(data)
-      end
-    end
-
-    test "raises error for input that is not a list" do
-      for not_a_list <- ["not a list", %{"key" => "k"}, nil, 42] do
-        assert_raise ArgumentError, ~r/Invalid input data/, fn ->
-          # credo:disable-for-next-line Credo.Check.Refactor.Apply
-          apply(Merkle, :new, [not_a_list])
-        end
-      end
-    end
-
-    test "raises error for non-string key" do
-      data = [
-        %{
-          "key" => 123,
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      assert_raise ArgumentError, ~r/Invalid key type/, fn ->
-        Merkle.new(data)
-      end
-    end
-
-    test "raises error for non-string hash" do
-      data = [%{"key" => "test-key-1", "hash" => 123}]
-
-      assert_raise ArgumentError, ~r/Invalid hash type/, fn ->
-        Merkle.new(data)
-      end
-    end
-
-    test "handles power of 2 sizes correctly" do
-      # Test with exactly 4 elements (already power of 2)
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-d",
-          "hash" => "d1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      # log2(4) = 2
-      assert tree.tree_depth == 2
-      assert length(tree.leaves) == 4
-    end
-  end
-
-  describe "root/1" do
-    test "returns the root hash as hex string" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      root = Merkle.root(tree)
-
-      assert is_binary(root)
-      assert String.length(root) == 64
-      # Only lowercase hex
-      assert String.match?(root, ~r/^[0-9a-f]+$/)
-    end
-
-    test "different data produces different roots" do
-      data1 = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      data2 = [
-        %{
-          "key" => "entry-xyz",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree1 = Merkle.new(data1)
-      tree2 = Merkle.new(data2)
-
-      assert Merkle.root(tree1) != Merkle.root(tree2)
-    end
-
-    test "same data produces same root (deterministic)" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-xyz",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree1 = Merkle.new(data)
-      tree2 = Merkle.new(data)
-
-      assert Merkle.root(tree1) == Merkle.root(tree2)
-    end
-  end
-
-  describe "determinism" do
-    test "deterministic results across multiple runs" do
-      data =
-        Enum.map(1..100, fn i ->
-          key = "#{String.pad_leading("#{i}", 8, "0")}-89ab-cdef-0123-456789abcdef"
-          hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-          %{"key" => key, "hash" => hash}
-        end)
-
-      # Create multiple trees with same data
-      trees = Enum.map(1..5, fn _ -> Merkle.new(data) end)
-      roots = Enum.map(trees, &Merkle.root/1)
-
-      # All roots should be identical
-      [first_root | rest_roots] = roots
-      assert Enum.all?(rest_roots, &(&1 == first_root))
-    end
-
-    test "proof generation and verification roundtrip for many entries" do
-      data =
-        Enum.map(1..50, fn i ->
-          key = "#{String.pad_leading("#{i}", 8, "0")}-89ab-cdef-0123-456789abcdef"
-          hash = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
-          %{"key" => key, "hash" => hash}
-        end)
-
-      tree = Merkle.new(data)
-      root = Merkle.root(tree)
-
-      # Verify all proofs
-      results =
-        Enum.map(data, fn %{"key" => key, "hash" => hash} ->
-          proof = Merkle.proof(tree, key)
-          Merkle.verify(hash, proof, root)
-        end)
-
-      assert Enum.all?(results, &(&1 == true))
-    end
-  end
-
-  describe "optional sorting" do
-    use ExUnitProperties
-    import StreamData
-
-    test "new/2 with default behavior sorts by key" do
-      data = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "m-middle",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      # Leaves should be sorted alphabetically by key
-      assert tree.leaves == [
-               {"a-first", "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"},
-               {"m-middle", "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"},
-               {"z-last", "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}
-             ]
-    end
-
-    test "new/2 with sort: true explicitly sorts by key" do
-      data = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "m-middle",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      tree = Merkle.new(data, sort: true)
-
-      # Leaves should be sorted alphabetically by key
-      assert tree.leaves == [
-               {"a-first", "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"},
-               {"m-middle", "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"},
-               {"z-last", "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}
-             ]
-    end
-
-    test "new/2 with sort: false preserves input order" do
-      data = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "m-middle",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      tree = Merkle.new(data, sort: false)
-
-      # Leaves should preserve input order exactly
-      assert tree.leaves == [
-               {"z-last", "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"},
-               {"m-middle", "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"},
-               {"a-first", "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"}
-             ]
-    end
-
-    test "sorted and unsorted trees produce different roots for different orders" do
-      data = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        }
-      ]
-
-      sorted_tree = Merkle.new(data, sort: true)
-      unsorted_tree = Merkle.new(data, sort: false)
-
-      # Different orders should produce different roots
-      assert Merkle.root(sorted_tree) != Merkle.root(unsorted_tree)
-    end
-
-    test "sorted trees produce same root regardless of input order" do
-      data1 = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        }
-      ]
-
-      data2 = [
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree1 = Merkle.new(data1, sort: true)
-      tree2 = Merkle.new(data2, sort: true)
-
-      # Same data sorted should produce identical roots
-      assert Merkle.root(tree1) == Merkle.root(tree2)
-    end
-
-    test "unsorted trees produce different roots for different input orders" do
-      data1 = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        }
-      ]
-
-      data2 = [
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree1 = Merkle.new(data1, sort: false)
-      tree2 = Merkle.new(data2, sort: false)
-
-      # Different orders without sorting should produce different roots
-      assert Merkle.root(tree1) != Merkle.root(tree2)
-    end
-
-    test "proof generation works correctly for unsorted trees" do
-      data = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        }
-      ]
-
-      tree = Merkle.new(data, sort: false)
-      root = Merkle.root(tree)
-
-      # Proofs should be generated correctly regardless of sorting
-      proof_z = Merkle.proof(tree, "z-last")
-      proof_a = Merkle.proof(tree, "a-first")
-
-      assert proof_z != nil
-      assert proof_a != nil
-
-      # Proofs should verify correctly
-      assert Merkle.verify(
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               proof_z,
-               root
-             )
-
-      assert Merkle.verify(
-               "b2c3d4e5f6789012345678901234567890123456789012345678901234567890",
-               proof_a,
-               root
-             )
-    end
-
-    test "empty tree handles sort option" do
-      empty_sorted = Merkle.new([], sort: true)
-      empty_unsorted = Merkle.new([], sort: false)
-
-      # Empty trees should be identical regardless of sort option
-      assert Merkle.root(empty_sorted) == Merkle.root(empty_unsorted)
-      assert empty_sorted.tree_depth == 0
-      assert empty_unsorted.tree_depth == 0
-    end
-
-    property "sorted trees are deterministic - same data always produces same root" do
-      check all(
-              data <- list_of(Generators.entry(), min_length: 1, max_length: 20),
-              unique_data = Enum.uniq_by(data, & &1["key"]),
-              unique_data != []
-            ) do
-        # Shuffle the data in different ways
-        shuffled1 = Enum.shuffle(unique_data)
-        shuffled2 = Enum.shuffle(unique_data)
-        shuffled3 = Enum.shuffle(unique_data)
-
-        # All sorted trees should produce the same root
-        tree1 = Merkle.new(shuffled1, sort: true)
-        tree2 = Merkle.new(shuffled2, sort: true)
-        tree3 = Merkle.new(shuffled3, sort: true)
-
-        assert Merkle.root(tree1) == Merkle.root(tree2)
-        assert Merkle.root(tree2) == Merkle.root(tree3)
-      end
-    end
-
-    property "unsorted trees preserve exact input order" do
-      check all(
-              data <- list_of(Generators.entry(), min_length: 1, max_length: 20),
-              unique_data = Enum.uniq_by(data, & &1["key"]),
-              unique_data != []
-            ) do
-        tree = Merkle.new(unique_data, sort: false)
-
-        # Extract keys from leaves
-        leaf_keys = Enum.map(tree.leaves, fn {key, _hash} -> key end)
-        input_keys = Enum.map(unique_data, fn %{"key" => key} -> key end)
-
-        # Keys should be in exact same order
-        assert leaf_keys == input_keys
+        Merkle.new([entry("a"), entry("b"), entry("c", "bad")])
       end
     end
   end
-
-  describe "padding with generic key format" do
-    test "padding lives in the levels only: the leaves and the index hold caller entries" do
-      data =
-        for i <- 1..3 do
-          %{
-            "key" => "test-#{i}",
-            "hash" => Base.encode16(:crypto.hash(:sha256, "t#{i}"), case: :lower)
-          }
-        end
-
-      tree = Merkle.new(data)
-
-      assert Enum.map(tree.leaves, &elem(&1, 0)) == ["test-1", "test-2", "test-3"]
-      assert map_size(tree.leaf_index) == 3
-      assert tree.tree_depth == 2
-      assert tuple_size(hd(tree.tree_levels)) == 4
-      assert elem(hd(tree.tree_levels), 3) == decode(padding_leaf_hash())
-    end
-
-    test "a caller key with the reserved padding prefix is refused, in any case" do
-      for key <- ["__PAD__0000000000000001", "__pad__1", "__Pad__x"] do
-        data = [
-          %{
-            "key" => key,
-            "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-          }
-        ]
-
-        assert_raise ArgumentError, ~r/reserved padding prefix/, fn -> Merkle.new(data) end
-      end
-    end
-
-    test "padding works correctly with sorted trees" do
-      # 5 leaves -> padded to 8
-      data = [
-        %{
-          "key" => "entry-5",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-1",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "entry-3",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        },
-        %{
-          "key" => "entry-2",
-          "hash" => "d4e5f6789012345678901234567890123456789012345678901234567890abcd"
-        },
-        %{
-          "key" => "entry-4",
-          "hash" => "e5f6789012345678901234567890123456789012345678901234567890123456"
-        }
-      ]
-
-      tree = Merkle.new(data, sort: true)
-
-      # Leaves should contain only caller input (5 entries)
-      assert length(tree.leaves) == 5
-
-      # Tree depth should account for padding to 8 (depth 3)
-      assert tree.tree_depth == 3
-
-      # Caller keys should be sorted
-      caller_keys = data |> Enum.map(& &1["key"]) |> Enum.sort()
-      tree_keys = tree.leaves |> Enum.map(&elem(&1, 0))
-      assert tree_keys == caller_keys
-    end
-
-    test "padding works correctly with unsorted trees" do
-      # 3 leaves -> padded to 4
-      data = [
-        %{
-          "key" => "z-last",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "a-first",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "m-middle",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      tree = Merkle.new(data, sort: false)
-
-      # Leaves should only contain caller input
-      assert length(tree.leaves) == 3
-
-      # Tree depth should account for padding to 4 (depth 2)
-      assert tree.tree_depth == 2
-
-      # Caller keys should preserve input order
-      assert elem(Enum.at(tree.leaves, 0), 0) == "z-last"
-      assert elem(Enum.at(tree.leaves, 1), 0) == "a-first"
-      assert elem(Enum.at(tree.leaves, 2), 0) == "m-middle"
-    end
-
-    test "three entries pad to four with the padding leaf, reproduced by hand" do
-      data = [
-        %{
-          "key" => "entry-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-2",
-          "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-        },
-        %{
-          "key" => "entry-3",
-          "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-        }
-      ]
-
-      [l1, l2, l3] = Enum.map(data, &decode(leaf_hash(&1["hash"])))
-      l4 = decode(padding_leaf_hash())
-      node = fn left, right -> :crypto.hash(:sha256, <<0x01>> <> left <> right) end
-      expected = node.(node.(l1, l2), node.(l3, l4)) |> Base.encode16(case: :lower)
-
-      tree = Merkle.new(data)
-      assert tree.tree_depth == 2
-      assert Merkle.root(tree) == expected
-    end
-
-    test "a hand-built proof for a padding slot does not verify" do
-      tree = Merkle.new(five_padded_to_eight())
-      root = Merkle.root(tree)
-
-      # Whoever holds the last real leaf also holds a proof whose first step is the
-      # padding slot's leaf hash. Swapping that step for their own leaf hash
-      # yields the padding slot's own proof, with no hashing they cannot do.
-      [_padding_sibling | rest] = Merkle.proof(tree, "entry-5")
-      forged = ["l:" <> leaf_hash(last_real_hash()) | rest]
-
-      # The path is arithmetically sound: walked by hand it reaches the real root.
-      assert walk_proof(forged, padding_constant()) == root
-
-      # The library still refuses it, because the value being proved is reserved.
-      refute Merkle.verify(padding_constant(), forged, root)
-    end
-
-    test "the padding constant is refused as an entry hash" do
-      padhash = padding_constant()
-      message = ~r/reserved Merkle padding constant/
-      entry = %{"key" => "entry-1", "hash" => padhash}
-
-      assert_raise ArgumentError, message, fn -> Merkle.new([entry]) end
-    end
-
-    test "the padding leaf hash still verifies as a proof sibling" do
-      tree = Merkle.new(five_padded_to_eight())
-      root = Merkle.root(tree)
-      proof = Merkle.proof(tree, "entry-5")
-
-      # This is the regression guard: the reservation must cover the value being
-      # proved and nothing else, or most proofs from a padded tree stop verifying.
-      assert ("r:" <> padding_leaf_hash()) in proof
-
-      assert Merkle.verify(last_real_hash(), proof, root)
-    end
-  end
-
-  # SHA-256(<<0x00, 0x00>>), the value every padding slot carries.
-  defp padding_constant,
-    do: "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
-
-  # SHA-256(0x00 || padding_constant()), the padding slot's leaf hash, which
-  # shows up as an ordinary sibling in proofs from a padded tree.
-  defp padding_leaf_hash,
-    do: "d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319"
-
-  defp last_real_hash,
-    do: "e5f6789012345678901234567890123456789012345678901234567890123456"
-
-  # Five leaves pad to eight, so the slot at index 5 is padding and the holder of
-  # the real leaf at index 4 can assemble that slot's whole path by hand.
-  defp five_padded_to_eight do
-    [
-      %{
-        "key" => "entry-1",
-        "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-      },
-      %{
-        "key" => "entry-2",
-        "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
-      },
-      %{
-        "key" => "entry-3",
-        "hash" => "c3d4e5f6789012345678901234567890123456789012345678901234567890ab"
-      },
-      %{
-        "key" => "entry-4",
-        "hash" => "d4e5f6789012345678901234567890123456789012345678901234567890abcd"
-      },
-      %{"key" => "entry-5", "hash" => last_real_hash()}
-    ]
-  end
-
-  defp leaf_hash(hex) do
-    :crypto.hash(:sha256, <<0x00>> <> Base.decode16!(hex, case: :lower))
-    |> Base.encode16(case: :lower)
-  end
-
-  # An independent walk of the audit path, so the forgery test can show that the hand-built
-  # path really does reach the root and is refused for carrying a reserved value
-  # rather than for being malformed.
-  defp walk_proof(proof, leaf_hex) do
-    start = :crypto.hash(:sha256, <<0x00>> <> Base.decode16!(leaf_hex, case: :lower))
-
-    proof
-    |> Enum.reduce(start, fn step, acc ->
-      case String.split(step, ":", parts: 2) do
-        ["l", sibling] -> :crypto.hash(:sha256, <<0x01>> <> decode(sibling) <> acc)
-        ["r", sibling] -> :crypto.hash(:sha256, <<0x01>> <> acc <> decode(sibling))
-      end
-    end)
-    |> Base.encode16(case: :lower)
-  end
-
-  defp decode(hex), do: Base.decode16!(hex, case: :lower)
 end

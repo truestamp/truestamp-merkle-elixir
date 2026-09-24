@@ -38,13 +38,6 @@ defmodule Truestamp.Merkle.Input do
       raise ArgumentError,
             "Invalid key format. Expected alphanumeric characters with optional .-_ separators, got: #{inspect(key, limit: 10)}"
     end
-
-    # The README's tree contract reserves this prefix, in any case, though padding
-    # slots carry no key.
-    if String.starts_with?(String.downcase(key), "__pad__") do
-      raise ArgumentError,
-            "Invalid key format. Keys must not use reserved padding prefix, got: #{inspect(key, limit: 10)}"
-    end
   end
 
   defp validate_key!(invalid) do
@@ -55,15 +48,6 @@ defmodule Truestamp.Merkle.Input do
     unless Hash.digest_hex?(digest) do
       raise ArgumentError,
             "Invalid hash format. Expected #{Hash.digest_hex_chars()}-character lowercase hex SHA-256 hash (#{Hash.digest_bytes()} bytes), got: #{inspect(digest, limit: 10)}"
-    end
-
-    # A padded slot stands for the reserved digest, but construction splices the
-    # slot's leaf hash straight in and never routes the digest through here, so no
-    # honest tree can carry it as a real entry. That invariant is what lets a walk
-    # refuse it outright.
-    if digest == Hash.reserved_digest_hex() do
-      raise ArgumentError,
-            "Invalid hash. #{Hash.reserved_digest_hex()} is the reserved Merkle padding constant and must not be used as an entry hash."
     end
   end
 

@@ -4,14 +4,17 @@
 defmodule Truestamp.Merkle.Tree do
   @moduledoc false
 
-  # Building a tree from a list of entries.
+  # Building a tree from a list of entries: RFC 9162 section 2.1.1's Merkle Tree Hash over
+  # the entries sorted by key (unless sort: false). There is no padding: a level with an
+  # odd number of nodes carries its last node up unchanged, which builds exactly the tree
+  # the RFC's recursive split at the largest power of two defines.
 
   alias Truestamp.Merkle
   alias Truestamp.Merkle.{Hash, Input}
 
-  # Ceiling on the depth arithmetic, which keeps the leaf-count math in range. Not a
-  # resource limit: 2^40 = 1,099,511,627,776 (~1 trillion) leaves exhausts memory long
-  # before the cap is reached.
+  # A ceiling that turns an impossible input into a clear error. Not a resource limit:
+  # a tree 40 levels deep holds over 2^39 (about 550 billion) leaves, and memory runs out
+  # long before that.
   @max_depth 40
 
   def new(entries, opts) do
@@ -48,15 +51,12 @@ defmodule Truestamp.Merkle.Tree do
     %Merkle{root_hash: root, leaves: [], tree_depth: 0, tree_levels: [{root}], leaf_index: %{}}
   end
 
-  # The one construction path. `pairs` are the entries in leaf order as
-  # {key, digest_hex}, and `leaf_hashes` their leaf hashes in the same order. Pads the
-  # bottom level to a power of two with the padding leaf, then keeps every level as a
-  # tuple, so proof generation reaches any sibling with elem/2.
+  # `pairs` are the entries in leaf order as {key, digest_hex}, and `leaf_hashes` their
+  # leaf hashes in the same order. Every level is kept as a tuple, bottom first, so proof
+  # generation reaches any sibling with elem/2.
   defp assemble(pairs, leaf_hashes, index) do
-    count = length(leaf_hashes)
-    depth = depth!(count)
-    padding = List.duplicate(Hash.padding_leaf(), Bitwise.bsl(1, depth) - count)
-    levels = build_levels(leaf_hashes ++ padding, [])
+    depth = depth!(length(leaf_hashes))
+    levels = build_levels(leaf_hashes, [])
 
     %Merkle{
       root_hash: levels |> List.last() |> elem(0),
@@ -69,21 +69,20 @@ defmodule Truestamp.Merkle.Tree do
 
   defp build_levels([_root] = level, built), do: Enum.reverse([List.to_tuple(level) | built])
 
-  defp build_levels(level, built) do
-    above =
-      level |> Enum.chunk_every(2) |> Enum.map(fn [left, right] -> Hash.node(left, right) end)
+  defp build_levels(level, built),
+    do: build_levels(pair_up(level), [List.to_tuple(level) | built])
 
-    build_levels(above, [List.to_tuple(level) | built])
-  end
+  # Pairs adjacent nodes left to right; an unpaired last node moves up unchanged.
+  defp pair_up([left, right | rest]), do: [Hash.node(left, right) | pair_up(rest)]
+  defp pair_up(unpaired), do: unpaired
 
-  # Levels above the leaves once `count` leaves are padded to a power of two: the
-  # ceiling of log2(count), or 0 for one leaf.
+  # Levels above the leaves: the ceiling of log2(count), or 0 for one leaf. It is also
+  # the longest path in the tree.
   defp depth!(count) do
     depth = if count <= 1, do: 0, else: bit_length(count - 1)
 
     if depth > @max_depth do
-      raise ArgumentError,
-            "Tree depth #{depth} exceeds maximum #{@max_depth} (#{Bitwise.bsl(1, depth)} leaves)"
+      raise ArgumentError, "Tree depth #{depth} exceeds maximum #{@max_depth} (#{count} leaves)"
     end
 
     depth
@@ -108,8 +107,7 @@ defmodule Truestamp.Merkle.Tree do
     raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
   end
 
-  # {key => position} for the real leaves, which is what keeps proof generation off a
-  # linear scan. Padding slots have no key and are never looked up.
+  # {key => position}, which is what keeps proof generation off a linear scan.
   defp leaf_index(pairs) do
     pairs
     |> Enum.with_index()

@@ -75,7 +75,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
         per_call_us(proofs, fn {proof, hash} -> true = Merkle.verify(hash, proof, root) end)
       end)
 
-    {longest, _} = Enum.max_by(proofs, fn {proof, _} -> length(proof) end)
+    {longest, _} = Enum.max_by(proofs, fn {proof, _} -> length(proof.path) end)
 
     Enum.join(
       [
@@ -87,7 +87,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
         tree_memory(tree, n),
         format_us(proof_us),
         format_us(verify_us),
-        "#{byte_size(Merkle.steps_to_binary(longest))} B",
+        "#{byte_size(Merkle.proof_to_binary(longest))} B",
         ""
       ],
       " | "

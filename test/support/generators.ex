@@ -14,7 +14,7 @@ defmodule Truestamp.Merkle.Generators do
 
   # A valid key: lowercase letters and digits with optional . - _ separators, up to 36
   # characters. It never starts or ends with a separator, so nothing is lost to
-  # trimming, and never starts with the reserved padding prefix.
+  # trimming.
   def key do
     gen all(
           first <- one_of([member_of(?a..?z), member_of(?0..?9)]),

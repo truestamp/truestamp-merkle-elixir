@@ -5,543 +5,379 @@ defmodule Truestamp.Merkle.PathTest do
   use ExUnit.Case, async: true
 
   alias Truestamp.Merkle
+  alias Truestamp.Merkle.RFC9162
 
-  # Walk fixtures come from vectors/merkle.json, which vectors_test.exs holds the
-  # library to in full. These tests cover behavior the file cannot express.
-  @vectors_path Path.expand("../../../vectors/merkle.json", __DIR__)
-  @external_resource @vectors_path
-  @vectors @vectors_path |> File.read!() |> JSON.decode!()
-  @trees Map.new(@vectors["trees"], &{&1["name"], &1})
-  @reserved @vectors["constants"]["reserved_digest"]
+  # A three-entry tree and the last entry's proof, for the refusal tests.
+  setup_all do
+    entries = RFC9162.entries(3)
+    tree = Merkle.new(entries)
+    last = List.last(entries)
 
-  # key01's path and the root, for the tree of the given name.
-  defp fixture(name) do
-    tree = Map.fetch!(@trees, name)
-    [path | _] = tree["paths"]
-    %{leaf: path["digest"], root: tree["root"], steps: path["steps"]}
+    %{
+      tree: tree,
+      root: Merkle.root(tree),
+      digest: last["hash"],
+      proof: Merkle.proof(tree, last["key"])
+    }
   end
 
-  defp digest(text), do: Base.encode16(:crypto.hash(:sha256, text), case: :lower)
-
-  # A syntactically valid path of `count` steps, for the step-count checks.
-  defp steps(count), do: for(n <- 1..count//1, do: "r:" <> digest("sibling#{n}"))
+  defp hash_hex(label), do: RFC9162.hex(RFC9162.sha256(label))
 
   describe "proof/2" do
-    test "generates proof for single element tree" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
+    test "every proof in trees of 1 to 130 entries is the RFC's audit path" do
+      for n <- 1..130 do
+        entries = RFC9162.entries(n)
+        tree = Merkle.new(entries)
+        digests = RFC9162.digests(entries)
 
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-1")
+        for {entry, m} <- Enum.with_index(entries) do
+          expected = Enum.map(RFC9162.path(m, digests), &RFC9162.hex/1)
 
-      assert is_list(proof)
-      # No siblings for single element
-      assert proof == []
-    end
-
-    test "generates proof for two element tree" do
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      proof_a = Merkle.proof(tree, "test-key-a")
-      proof_b = Merkle.proof(tree, "test-key-b")
-
-      assert is_list(proof_a)
-      assert is_list(proof_b)
-      assert length(proof_a) == 1
-      assert length(proof_b) == 1
-
-      # Proof should contain sibling information as strings
-      [proof_element_a] = proof_a
-      [proof_element_b] = proof_b
-
-      assert is_binary(proof_element_a)
-      assert is_binary(proof_element_b)
-      assert String.contains?(proof_element_a, ":")
-      assert String.contains?(proof_element_b, ":")
-
-      # Extract directions and verify they're opposite
-      [direction_a, _hash_a] = String.split(proof_element_a, ":", parts: 2)
-      [direction_b, _hash_b] = String.split(proof_element_b, ":", parts: 2)
-      assert direction_a in ["l", "r"]
-      assert direction_b in ["l", "r"]
-      assert direction_a != direction_b
-    end
-
-    test "generates proof for larger tree" do
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-c",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-d",
-          "hash" => "d1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-
-      proof = Merkle.proof(tree, "test-key-a")
-
-      assert is_list(proof)
-      # Depth 2 tree should have 2 proof elements
-      assert length(proof) == 2
-
-      # Each proof element should be a "direction:hash" string
-      Enum.each(proof, fn proof_element ->
-        assert is_binary(proof_element)
-        assert String.contains?(proof_element, ":")
-        [direction, hash] = String.split(proof_element, ":", parts: 2)
-        assert direction in ["l", "r"]
-        assert is_binary(hash)
-        assert String.length(hash) == 64
-      end)
-    end
-
-    test "returns nil for non-existent key" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "nonexistent-key-not-found-12345")
-
-      assert proof == nil
-    end
-
-    test "handles keys with different ordering" do
-      data = [
-        %{
-          "key" => "test-key-z",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-a",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      root = Merkle.root(tree)
-
-      # Listed z, a, b; sorted a, b, z. Every key proves its own digest.
-      assert Enum.map(tree.leaves, &elem(&1, 0)) == ["test-key-a", "test-key-b", "test-key-z"]
-
-      for %{"key" => key, "hash" => hash} <- data do
-        assert Merkle.verify(hash, Merkle.proof(tree, key), root), key
-      end
-    end
-  end
-
-  describe "verify/4" do
-    test "verifies proof for single element tree" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-1")
-      root = Merkle.root(tree)
-
-      assert Merkle.verify(
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               proof,
-               root
-             ) == true
-    end
-
-    test "returns false for a leaf hash with a trailing newline" do
-      hash = "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-      tree = Merkle.new([%{"key" => "test-key-1", "hash" => hash}])
-      proof = Merkle.proof(tree, "test-key-1")
-      root = Merkle.root(tree)
-
-      # verify/4 answers every invalid input with false, so a stray newline has
-      # to be rejected rather than carried into the hashing path.
-      assert Merkle.verify(hash <> "\n", proof, root) == false
-    end
-
-    test "verifies proof for two element tree" do
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      root = Merkle.root(tree)
-
-      proof_a = Merkle.proof(tree, "test-key-a")
-      proof_b = Merkle.proof(tree, "test-key-b")
-
-      assert Merkle.verify(
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               proof_a,
-               root
-             ) == true
-
-      assert Merkle.verify(
-               "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               proof_b,
-               root
-             ) == true
-    end
-
-    test "verifies proof for larger tree" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-12345",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-23456",
-          "hash" => "c1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-34567",
-          "hash" => "d1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      root = Merkle.root(tree)
-
-      # Verify every entry
-      Enum.each(data, fn %{"key" => key, "hash" => hash} ->
-        proof = Merkle.proof(tree, key)
-        assert Merkle.verify(hash, proof, root) == true
-      end)
-    end
-
-    test "rejects invalid proof with wrong root" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-1")
-
-      wrong_root = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-      assert Merkle.verify(
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               proof,
-               wrong_root
-             ) == false
-    end
-
-    test "rejects invalid proof with wrong hash" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-1")
-      root = Merkle.root(tree)
-
-      assert Merkle.verify(
-               "aaa0012345678901234567890123456789012345678901234567890123456789",
-               proof,
-               root
-             ) == false
-    end
-
-    test "rejects invalid proof with different hash" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-1")
-      root = Merkle.root(tree)
-
-      assert Merkle.verify(
-               "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               proof,
-               root
-             ) == false
-    end
-
-    test "rejects tampered proof" do
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
-
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-a")
-      root = Merkle.root(tree)
-
-      # Tamper with proof
-      tampered_proof =
-        case proof do
-          [proof_element] ->
-            [direction, _hash] = String.split(proof_element, ":", parts: 2)
-            ["#{direction}:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]
-
-          _ ->
-            proof
+          assert Merkle.proof(tree, entry["key"]) ==
+                   %{leaf_index: m, tree_size: n, path: expected},
+                 "n=#{n} m=#{m}"
         end
+      end
+    end
 
-      assert Merkle.verify(
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               tampered_proof,
-               root
-             ) == false
+    test "a one-entry tree's proof has an empty path; a missing key has no proof" do
+      tree = Merkle.new(RFC9162.entries(1))
+      assert Merkle.proof(tree, "k00001") == %{leaf_index: 0, tree_size: 1, path: []}
+      assert Merkle.proof(tree, "k00002") == nil
     end
   end
 
-  describe "JSON serialization compatibility" do
-    test "proof structure is JSON-serializable" do
-      data = [
-        %{
-          "key" => "test-key-a",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "test-key-b",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
+  describe "walk/3 and verify/4 accept" do
+    test "every proof in trees of 1 to 130 entries, reaching the RFC's root" do
+      for n <- 1..130 do
+        entries = RFC9162.entries(n)
+        tree = Merkle.new(entries)
+        root = Merkle.root(tree)
 
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-a")
-
-      # Should be able to encode/decode proof as JSON
-      json_proof = JSON.encode!(proof)
-      decoded_proof = JSON.decode!(json_proof)
-
-      # No conversion needed - strings are preserved in JSON
-      normalized_proof = decoded_proof
-
-      assert proof == normalized_proof
+        for entry <- entries do
+          proof = Merkle.proof(tree, entry["key"])
+          assert Merkle.walk(entry["hash"], proof) == {:ok, root}
+          assert Merkle.verify(entry["hash"], proof, root)
+          assert Merkle.verify(entry["hash"], proof, root, max_steps: tree.tree_depth)
+        end
+      end
     end
 
-    test "proof verification works with JSON roundtrip" do
-      data = [
-        %{
-          "key" => "test-key-1",
-          "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        },
-        %{
-          "key" => "entry-xyz",
-          "hash" => "b1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
-        }
-      ]
+    test "the path length the RFC's loop accepts, and only that, for arbitrary nodes" do
+      digest = RFC9162.sha256("d")
+      nodes = for i <- 1..12, do: RFC9162.sha256("n#{i}")
 
-      tree = Merkle.new(data)
-      proof = Merkle.proof(tree, "test-key-1")
-      root = Merkle.root(tree)
+      for size <- 1..70, index <- 0..(size - 1) do
+        accepted =
+          for len <- 0..12,
+              RFC9162.walk(digest, index, size, Enum.take(nodes, len)) != :fail,
+              do: len
 
-      # JSON roundtrip
-      json_proof = JSON.encode!(proof)
-      decoded_proof = JSON.decode!(json_proof)
+        # The RFC's loop accepts exactly one length for each index and size, and it is
+        # the length of the RFC's recursive PATH definition.
+        assert [len] = accepted
+        assert len == RFC9162.path_length(index, size)
 
-      # No conversion needed - strings are preserved in JSON
-      normalized_proof = decoded_proof
+        for try <- 0..12 do
+          path = nodes |> Enum.take(try) |> Enum.map(&RFC9162.hex/1)
 
-      # Verification should still work
-      assert Merkle.verify(
-               "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
-               normalized_proof,
-               root
-             ) == true
+          result =
+            Merkle.walk(RFC9162.hex(digest), %{leaf_index: index, tree_size: size, path: path})
+
+          if try == len do
+            expected = RFC9162.walk(digest, index, size, Enum.take(nodes, len))
+            assert result == {:ok, RFC9162.hex(expected)}, "size=#{size} index=#{index}"
+          else
+            assert result == {:error, :wrong_path_length},
+                   "size=#{size} index=#{index} len=#{try}"
+          end
+        end
+      end
+    end
+
+    test "the RFC's path length at the edges of the size range" do
+      digest = RFC9162.hex(RFC9162.sha256("d"))
+      nodes = for i <- 1..65, do: RFC9162.hex(RFC9162.sha256("n#{i}"))
+
+      sizes =
+        for(k <- 0..63, delta <- [-1, 0, 1], do: Bitwise.bsl(1, k) + delta)
+        |> Enum.concat([0xFFFF_FFFF_FFFF_FFFF])
+        |> Enum.filter(&(&1 >= 1 and &1 <= 0xFFFF_FFFF_FFFF_FFFF))
+        |> Enum.uniq()
+
+      for size <- sizes,
+          index <- Enum.uniq([0, 1, div(size, 2), size - 2, size - 1]),
+          index >= 0 and index < size do
+        len = RFC9162.path_length(index, size)
+        proof = %{leaf_index: index, tree_size: size, path: Enum.take(nodes, len)}
+
+        assert {:ok, _root} = Merkle.walk(digest, proof), "size=#{size} index=#{index}"
+
+        assert Merkle.walk(digest, %{proof | path: Enum.take(nodes, len + 1)}) ==
+                 {:error, :wrong_path_length}
+
+        if len > 0 do
+          assert Merkle.walk(digest, %{proof | path: Enum.take(nodes, len - 1)}) ==
+                   {:error, :wrong_path_length}
+        end
+      end
     end
   end
 
-  describe "walk/3" do
-    test "walks every entry of a padded tree to its root" do
-      entries = for i <- 1..13, do: %{"key" => "k#{i}", "hash" => digest("e#{i}")}
+  describe "walk/3 and verify/4 refuse" do
+    test "any altered proof, including changes that keep the path's length" do
+      entries = RFC9162.entries(7)
       tree = Merkle.new(entries)
+      root = Merkle.root(tree)
+      [first_entry | _] = entries
+      digest = first_entry["hash"]
+      proof = Merkle.proof(tree, first_entry["key"])
+      [first | rest] = proof.path
+      changed = String.slice(first, 0..-2//1) <> if(String.last(first) == "0", do: "1", else: "0")
 
-      for %{"key" => key, "hash" => hash} <- entries do
-        assert Merkle.walk(hash, Merkle.proof(tree, key)) == {:ok, Merkle.root(tree)}
+      # Indexes 1 to 3 have paths as long as index 0's, so these get as far as hashing
+      # and reach some other root.
+      same_length = [
+        %{proof | leaf_index: 1},
+        %{proof | leaf_index: 2},
+        %{proof | leaf_index: 3},
+        %{proof | path: [changed | rest]},
+        %{proof | path: Enum.reverse(proof.path)}
+      ]
+
+      for altered <- same_length do
+        assert {:ok, other} = Merkle.walk(digest, altered), inspect(altered)
+        refute other == root
+        refute Merkle.verify(digest, altered, root)
+      end
+
+      for altered <- [%{proof | path: rest}, %{proof | path: proof.path ++ [root]}] do
+        assert Merkle.walk(digest, altered) == {:error, :wrong_path_length}
+        refute Merkle.verify(digest, altered, root)
+      end
+
+      assert Merkle.verify(digest, proof, root)
+    end
+
+    test "a digest that is not 64 lowercase hex characters", %{proof: proof} do
+      for bad <- [
+            String.duplicate("A", 64),
+            String.duplicate("a", 63),
+            String.duplicate("a", 64) <> "\n",
+            nil,
+            7
+          ] do
+        assert Merkle.walk(bad, proof) == {:error, :invalid_leaf}, inspect(bad)
       end
     end
-  end
 
-  describe "walk/3 refusals" do
-    setup do
-      fixture("leaf-3")
-    end
-
-    test "a leaf that is not 64 lowercase hex characters", %{steps: steps, leaf: leaf} do
-      for bad <- [String.upcase(leaf), leaf <> "\n", binary_part(leaf, 0, 63), "", nil, 42] do
-        assert Merkle.walk(bad, steps) == {:error, :invalid_leaf}, inspect(bad)
+    test "a proof that is not a proof", %{digest: digest} do
+      for bad <- [
+            nil,
+            [],
+            "proof",
+            %{},
+            %{leaf_index: 0, tree_size: 1},
+            %{"leaf_index" => 0, "tree_size" => 1, "path" => []},
+            %{leaf_index: -1, tree_size: 1, path: []},
+            %{leaf_index: 0, tree_size: 0, path: []},
+            %{leaf_index: 0, tree_size: 18_446_744_073_709_551_616, path: []},
+            %{leaf_index: 0.0, tree_size: 1, path: []},
+            %{leaf_index: 0, tree_size: 3, path: "not a list"},
+            %{leaf_index: 0, tree_size: 3, path: nil}
+          ] do
+        assert Merkle.walk(digest, bad) == {:error, :invalid_proof}, inspect(bad)
       end
     end
 
-    test "the reserved padding value as the leaf", %{steps: steps} do
-      assert Merkle.walk(@reserved, steps) == {:error, :reserved_leaf}
-      assert Merkle.walk(@reserved, []) == {:error, :reserved_leaf}
+    test "an index not below the size", %{digest: digest} do
+      for {index, size} <- [{3, 3}, {4, 3}, {1, 1}] do
+        proof = %{leaf_index: index, tree_size: size, path: []}
+        assert Merkle.walk(digest, proof) == {:error, :index_out_of_range}
+      end
     end
 
-    test "33 steps under a cap of 32, and 65 under the default of 64", %{leaf: leaf} do
-      assert {:ok, _} = Merkle.walk(leaf, steps(32), max_steps: 32)
-      assert Merkle.walk(leaf, steps(33), max_steps: 32) == {:error, :too_many_steps}
-      assert {:ok, _} = Merkle.walk(leaf, steps(64))
-      assert Merkle.walk(leaf, steps(65)) == {:error, :too_many_steps}
+    test "a path longer than :max_steps, before the path is read", %{digest: digest} do
+      proof = %{leaf_index: 0, tree_size: Bitwise.bsl(1, 33), path: [:not_read]}
+      assert Merkle.walk(digest, proof, max_steps: 32) == {:error, :too_many_steps}
+
+      assert Merkle.walk(digest, %{proof | tree_size: 2}, max_steps: 0) ==
+               {:error, :too_many_steps}
     end
 
-    test "an oversized path is refused before any step is read", %{leaf: leaf} do
-      junk = List.duplicate(:not_a_step, 33)
-      assert Merkle.walk(leaf, junk, max_steps: 32) == {:error, :too_many_steps}
+    test "a path of the wrong length, counted without reading its nodes", %{digest: digest} do
+      # Two nodes are needed; a million junk elements are refused on length alone.
+      long = List.duplicate(:junk, 1_000_000)
+
+      assert Merkle.walk(digest, %{leaf_index: 0, tree_size: 3, path: long}) ==
+               {:error, :wrong_path_length}
+
+      assert Merkle.walk(digest, %{leaf_index: 0, tree_size: 3, path: [:junk]}) ==
+               {:error, :wrong_path_length}
     end
 
-    test "uppercase hex or direction in a step", %{leaf: leaf, steps: [first | rest]} do
-      "r:" <> sibling = first
-      assert Merkle.walk(leaf, ["r:" <> String.upcase(sibling) | rest]) == {:error, :invalid_step}
-      assert Merkle.walk(leaf, ["R:" <> sibling | rest]) == {:error, :invalid_step}
+    test "an improper list, whatever its length", %{digest: digest} do
+      [a, b, c, d] = for label <- ~w(a b c d), do: hash_hex(label)
+
+      for path <- [[a | b], [a, b | :tail], [a, b, c, d | :tail]] do
+        assert Merkle.walk(digest, %{leaf_index: 0, tree_size: 3, path: path}) ==
+                 {:error, :wrong_path_length}
+      end
     end
 
-    test "a step with a trailing newline", %{leaf: leaf, steps: [first | rest]} do
-      assert Merkle.walk(leaf, [first <> "\n" | rest]) == {:error, :invalid_step}
+    test "counting stops one node past the length, however long the path is", ctx do
+      %{digest: digest} = ctx
+      long = List.duplicate(:junk, 1_000_000)
+      proof = %{leaf_index: 0, tree_size: 3, path: long}
+
+      {:reductions, before} = Process.info(self(), :reductions)
+      assert Merkle.walk(digest, proof) == {:error, :wrong_path_length}
+      {:reductions, later} = Process.info(self(), :reductions)
+
+      # Counting the whole list would take about a million reductions.
+      assert later - before < 10_000
     end
 
-    test "a bare hash with no direction", %{leaf: leaf, steps: [first | rest]} do
-      "r:" <> sibling = first
-      assert Merkle.walk(leaf, [sibling | rest]) == {:error, :invalid_step}
-    end
-
-    test "other malformed steps", %{leaf: leaf} do
-      sibling = digest("s")
+    test "a node that is not 64 lowercase hex characters", %{digest: digest, proof: proof} do
+      [first] = proof.path
 
       for bad <- [
-            "x:" <> sibling,
-            "r" <> sibling,
-            "r::" <> sibling,
-            "r:" <> binary_part(sibling, 0, 63),
+            String.upcase(first),
+            first <> "\n",
+            binary_part(first, 0, 63),
+            "r:" <> first,
             :atom,
-            7,
-            nil
+            7
           ] do
-        assert Merkle.walk(leaf, [bad]) == {:error, :invalid_step}, inspect(bad)
+        assert Merkle.walk(digest, %{proof | path: [bad]}) == {:error, :invalid_node},
+               inspect(bad)
       end
     end
 
-    test "steps that are not a proper list", %{leaf: leaf, steps: [first | _]} do
-      for bad <- ["not a list", %{}, nil, [first | :tail]] do
-        assert Merkle.walk(leaf, bad) == {:error, :invalid_step}, inspect(bad)
-      end
+    test "the checks run in order: digest, proof, index, cap, length, nodes", %{digest: digest} do
+      # The path's nodes come last: a wrong node in a path of the right length.
+      assert Merkle.walk(digest, %{leaf_index: 2, tree_size: 3, path: [:x]}) ==
+               {:error, :invalid_node}
+
+      assert Merkle.walk("bad", %{leaf_index: 9, tree_size: 3, path: []}) ==
+               {:error, :invalid_leaf}
+
+      assert Merkle.walk("bad", %{leaf_index: 0, tree_size: 0, path: :x}) ==
+               {:error, :invalid_leaf}
+
+      assert Merkle.walk(digest, %{leaf_index: 9, tree_size: 0, path: []}) ==
+               {:error, :invalid_proof}
+
+      assert Merkle.walk(digest, %{leaf_index: 9, tree_size: 3, path: :x}) ==
+               {:error, :invalid_proof}
+
+      assert Merkle.walk(digest, %{leaf_index: 9, tree_size: 3, path: [:x]}) ==
+               {:error, :index_out_of_range}
+
+      # Any path for this index, at this size or the next, is about 40 nodes: over the cap.
+      huge = Bitwise.bsl(1, 40) - 1
+
+      assert Merkle.walk(digest, %{leaf_index: huge, tree_size: huge, path: []}, max_steps: 32) ==
+               {:error, :index_out_of_range}
+
+      big = %{leaf_index: 0, tree_size: huge, path: [:x]}
+      assert Merkle.walk(digest, big, max_steps: 32) == {:error, :too_many_steps}
+
+      assert Merkle.walk(digest, %{leaf_index: 0, tree_size: 3, path: [:x]}) ==
+               {:error, :wrong_path_length}
     end
 
-    test "the leaf is checked before the steps", %{leaf: leaf} do
-      assert Merkle.walk("bad", steps(65)) == {:error, :invalid_leaf}
-      assert Merkle.walk(@reserved, [:not_a_step]) == {:error, :reserved_leaf}
-      assert Merkle.walk(leaf, [:not_a_step]) == {:error, :invalid_step}
+    test "verify/4 is false for a root that is not 64 lowercase hex characters", ctx do
+      %{digest: digest, proof: proof, root: root} = ctx
+
+      for bad <- [String.upcase(root), root <> "\n", binary_part(root, 0, 63), nil] do
+        refute Merkle.verify(digest, proof, bad), inspect(bad)
+      end
+    end
+  end
+
+  describe "the tree size" do
+    # RFC 9162's design, not a defect: the size must come from the same trusted source
+    # as the root, which is why the docs say to check it there.
+
+    test "is not fixed by the root: a size-3 proof claiming size 4 still reaches the size-3 root" do
+      entries = RFC9162.entries(3)
+      tree = Merkle.new(entries)
+      [first | _] = entries
+      proof = Merkle.proof(tree, first["key"])
+
+      assert Merkle.verify(first["hash"], %{proof | tree_size: 4}, Merkle.root(tree))
+      refute Merkle.verify(first["hash"], %{proof | tree_size: 5}, Merkle.root(tree))
+    end
+
+    test "and the index moves with it: the last of three also verifies as index 1 of two" do
+      entries = RFC9162.entries(3)
+      tree = Merkle.new(entries)
+      last = List.last(entries)
+      proof = Merkle.proof(tree, last["key"])
+
+      assert proof.leaf_index == 2 and proof.tree_size == 3
+
+      assert Merkle.verify(
+               last["hash"],
+               %{proof | leaf_index: 1, tree_size: 2},
+               Merkle.root(tree)
+             )
+    end
+
+    test "in trees of 1 to 300 entries, 43,730 of 45,150 proofs verify with the size raised by one" do
+      counts =
+        for n <- 1..300, reduce: {0, 0} do
+          {total, raised} ->
+            entries = RFC9162.entries(n)
+            tree = Merkle.new(entries)
+            root = Merkle.root(tree)
+
+            still =
+              Enum.count(entries, fn entry ->
+                proof = Merkle.proof(tree, entry["key"])
+                Merkle.verify(entry["hash"], %{proof | tree_size: n + 1}, root)
+              end)
+
+            {total + n, raised + still}
+        end
+
+      # The figure the module documentation quotes.
+      assert counts == {45_150, 43_730}
+    end
+
+    test "given the true size, no other index verifies, in trees of 1 to 64 entries" do
+      for n <- 1..64 do
+        entries = RFC9162.entries(n)
+        tree = Merkle.new(entries)
+        root = Merkle.root(tree)
+
+        for entry <- entries do
+          proof = Merkle.proof(tree, entry["key"])
+
+          for other <- 0..(n - 1), other != proof.leaf_index do
+            refute Merkle.verify(entry["hash"], %{proof | leaf_index: other}, root),
+                   "n=#{n} index=#{proof.leaf_index} other=#{other}"
+          end
+        end
+      end
     end
   end
 
   describe "options" do
-    test ":max_steps must be an integer from 0 to 64" do
-      leaf = digest("leaf1")
-      assert {:ok, _} = Merkle.walk(leaf, [], max_steps: 0)
-      assert Merkle.walk(leaf, steps(1), max_steps: 0) == {:error, :too_many_steps}
+    test ":max_steps is an integer from 0 to 64, and nothing else is accepted", ctx do
+      %{digest: digest, proof: proof, root: root} = ctx
 
-      for bad <- [65, -1, 1.5, nil, "32"] do
-        assert_raise ArgumentError, fn -> Merkle.walk(leaf, [], max_steps: bad) end
-        assert_raise ArgumentError, fn -> Merkle.verify(leaf, [], leaf, max_steps: bad) end
+      for bad <- [[max_steps: 65], [max_steps: -1], [max_steps: nil], [max_steps: "32"], [cap: 1]] do
+        assert_raise ArgumentError, fn -> Merkle.walk(digest, proof, bad) end
+        assert_raise ArgumentError, fn -> Merkle.verify(digest, proof, root, bad) end
       end
-    end
-
-    test "an unknown option, or options that are not a keyword list, raise" do
-      leaf = digest("leaf1")
-      assert_raise ArgumentError, fn -> Merkle.walk(leaf, [], cap: 3) end
 
       for bad <- [%{max_steps: 3}, nil, "opts"] do
-        assert_raise ArgumentError, fn -> Merkle.walk(leaf, [], bad) end
-        assert_raise ArgumentError, fn -> Merkle.verify(leaf, [], leaf, bad) end
+        assert_raise ArgumentError, ~r/options must be a keyword list/, fn ->
+          Merkle.walk(digest, proof, bad)
+        end
       end
     end
   end
-
-  describe "verify/4 refusals" do
-    setup do
-      fixture("leaf-5")
-    end
-
-    test "true for a path that reaches the root", %{leaf: leaf, root: root, steps: steps} do
-      assert Merkle.verify(leaf, steps, root)
-      big = fixture("bigleaf-300")
-      assert Merkle.verify(big.leaf, big.steps, big.root)
-    end
-
-    test "false for a different root or leaf", %{leaf: leaf, root: root, steps: steps} do
-      refute Merkle.verify(leaf, steps, fixture("bigleaf-300").root)
-      refute Merkle.verify(digest("leaf2"), steps, root)
-    end
-
-    test "false for every walk refusal", %{leaf: leaf, root: root, steps: steps} do
-      refute Merkle.verify(String.upcase(leaf), steps, root)
-      refute Merkle.verify(@reserved, steps, root)
-      refute Merkle.verify(leaf, ["R" <> tl_string(hd(steps)) | tl(steps)], root)
-      refute Merkle.verify(leaf, steps, root, max_steps: length(steps) - 1)
-    end
-
-    test "false for a root that is not 64 lowercase hex characters",
-         %{leaf: leaf, root: root, steps: steps} do
-      for bad <- [String.upcase(root), root <> "\n", binary_part(root, 0, 63), nil] do
-        refute Merkle.verify(leaf, steps, bad), inspect(bad)
-      end
-    end
-  end
-
-  defp tl_string(<<_, rest::binary>>), do: rest
 end

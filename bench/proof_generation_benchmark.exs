@@ -10,7 +10,6 @@ defmodule ProofGenerationBenchmark do
 
   This script specifically focuses on measuring:
   - Proof generation performance for large trees (O(log n) per proof)
-  - Convenience wrapper performance
   """
 
   alias Truestamp.Merkle
@@ -93,9 +92,9 @@ defmodule ProofGenerationBenchmark do
     IO.puts("    Theoretical min operations: #{Float.round(theoretical_min_ops, 0)}")
 
     # Show proof structure for the first proof
-    if proof_count >= 1 and length(hd(proofs)) > 0 do
+    if proof_count >= 1 and hd(proofs).path != [] do
       sample_proof = hd(proofs)
-      IO.puts("    Sample proof length: #{length(sample_proof)} steps")
+      IO.puts("    Sample proof length: #{length(sample_proof.path)} nodes")
 
       # Show proof size in JSON
       json_size = JSON.encode!(sample_proof) |> String.length()
