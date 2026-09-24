@@ -6,6 +6,17 @@ module, writing an independent verifier against it, or deciding what a proof is 
 inside a system of their own. The module's own `@moduledoc` carries the API contract; this
 file carries the reasoning.
 
+## Reporting a vulnerability
+
+Do not open a public GitHub issue for a security report. Use one of these private channels:
+
+1. **GitHub private vulnerability report** (preferred), at
+   <https://github.com/truestamp/truestamp-merkle-elixir/security/advisories/new>.
+2. **Email** to <security@truestamp.com>, with "truestamp-merkle-elixir" in the subject line.
+
+Include a minimal reproduction where you can: the entries, the proof and the root, and what
+you expected to happen. Only the latest commit on `main` is supported.
+
 ## What a proof attests
 
 An inclusion proof is a claim about one 32-byte value and one root:
