@@ -104,10 +104,12 @@ defmodule Truestamp.MerkleVectorsTest do
       end
     end
 
-    test "the binary decoder refuses every non-canonical binary" do
-      for %{"name" => name, "binary_hex" => hex} <- @vectors["binary_refusals"] do
+    test "the binary decoder refuses every non-canonical binary, naming why" do
+      for %{"name" => name, "binary_hex" => hex, "error" => error} <-
+            @vectors["binary_refusals"] do
         bytes = Base.decode16!(hex, case: :lower)
-        assert {:error, _} = Merkle.steps_from_binary(bytes), name
+        assert {:error, reason} = Merkle.steps_from_binary(bytes), name
+        assert Atom.to_string(reason) == error, name
 
         assert {:error, _} = Merkle.decode_proof_base64(Base.url_encode64(bytes, padding: false)),
                name
@@ -115,8 +117,10 @@ defmodule Truestamp.MerkleVectorsTest do
     end
 
     test "the base64url decoder refuses every non-canonical spelling" do
-      for %{"name" => name, "base64url" => text} <- @vectors["base64url_refusals"] do
-        assert {:error, _} = Merkle.decode_proof_base64(text), name
+      for %{"name" => name, "base64url" => text, "error" => error} <-
+            @vectors["base64url_refusals"] do
+        assert {:error, reason} = Merkle.decode_proof_base64(text), name
+        assert Atom.to_string(reason) == error, name
       end
     end
   end

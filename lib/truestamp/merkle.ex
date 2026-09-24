@@ -256,7 +256,8 @@ defmodule Truestamp.Merkle do
   - `steps_to_binary/1` and `encode_proof_base64/1` return the encoded value directly and raise
     `ArgumentError` for a proof that would not survive the round trip
   - `steps_from_binary/1` and `decode_proof_base64/1` take untrusted bytes, so they return
-    `{:ok, proof}` or `{:error, reason}` rather than raising
+    `{:ok, proof}` or `{:error, reason}` rather than raising, where the reason is one of
+    the atoms `decode_error()` lists
   """
 
   # The public API. Each function delegates to the internal module that owns it:
@@ -285,6 +286,13 @@ defmodule Truestamp.Merkle do
   @type proof :: [proof_step()]
 
   @type walk_error :: :invalid_leaf | :reserved_leaf | :too_many_steps | :invalid_step
+
+  @type decode_error ::
+          :too_many_steps
+          | :wrong_length
+          | :unused_direction_bits
+          | :invalid_binary
+          | :invalid_base64url
 
   # ── Building a tree from a list ───────────────────────────────────────────
 
@@ -735,6 +743,14 @@ defmodule Truestamp.Merkle do
   `depth` up clear, and exactly `depth` 32-byte siblings, with nothing after them. A set
   unused direction bit would give one path several encodings, so it is refused.
 
+  The checks run in this order, and the first that fails names the refusal:
+
+    * `:too_many_steps` - the depth byte is over #{@max_proof_depth}.
+    * `:wrong_length` - the bytes after the depth are not exactly the direction bytes and
+      siblings it implies, or there are no bytes at all.
+    * `:unused_direction_bits` - a direction bit past the depth is set.
+    * `:invalid_binary` - the argument is not a binary.
+
   ## Examples
 
       iex> binary = <<1, 1, 94, 92, 174, 175, 194, 113, 85, 195, 104, 182, 242, 1, 16, 125,
@@ -747,10 +763,10 @@ defmodule Truestamp.Merkle do
       {:ok, []}
 
       iex> Truestamp.Merkle.steps_from_binary(<<1, 3>> <> :binary.copy(<<0>>, 32))
-      {:error, "Invalid proof binary: direction bits past depth 1 are set"}
+      {:error, :unused_direction_bits}
 
   """
-  @spec steps_from_binary(binary()) :: {:ok, proof()} | {:error, term()}
+  @spec steps_from_binary(term()) :: {:ok, proof()} | {:error, decode_error()}
   defdelegate steps_from_binary(binary), to: Codec
 
   @doc """
@@ -781,17 +797,18 @@ defmodule Truestamp.Merkle do
 
   Accepts only the canonical text: unpadded base64url exactly as `encode_proof_base64/1`
   writes it, so a padded string, or one whose last character carries stray low bits, is
-  refused. The bytes then go to `steps_from_binary/1`, which accepts only the canonical
-  binary form. Returns `{:ok, steps}` or `{:error, reason}`, whatever it is given.
+  refused with `:invalid_base64url`. The bytes then go to `steps_from_binary/1`, which
+  accepts only the canonical binary form and names its own refusals. Returns
+  `{:ok, steps}` or `{:error, reason}`, whatever it is given.
 
   ## Examples
 
       iex> Truestamp.Merkle.decode_proof_base64("AA")
       {:ok, []}
       iex> Truestamp.Merkle.decode_proof_base64("AB")
-      {:error, "Invalid base64url encoding"}
+      {:error, :invalid_base64url}
 
   """
-  @spec decode_proof_base64(term()) :: {:ok, proof()} | {:error, term()}
+  @spec decode_proof_base64(term()) :: {:ok, proof()} | {:error, decode_error()}
   defdelegate decode_proof_base64(text), to: Codec
 end

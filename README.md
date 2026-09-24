@@ -142,7 +142,11 @@ hex throughout. The file's sections:
 - `walk_accepts`: a `digest`, `steps` and `max_steps` a walk must accept, with the `root`
   it reaches.
 - `walk_refusals`: the same inputs a walk must refuse, with the `error` it names.
-- `binary_refusals` and `base64url_refusals`: encodings the decoders must refuse.
+- `binary_refusals` and `base64url_refusals`: encodings the decoders must refuse, with
+  the `error` each names. The binary decoder checks the depth byte (`too_many_steps`),
+  then the length it implies (`wrong_length`), then the unused direction bits
+  (`unused_direction_bits`); text other than the encoder's spelling is
+  `invalid_base64url`.
 
 The values below are a summary of that file.
 

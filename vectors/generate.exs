@@ -281,15 +281,20 @@ defmodule MerkleVectors do
     <<1, 1, siblings::binary>> = one
 
     [
-      {"direction bit past the depth", <<1, 3>> <> siblings},
-      {"highest unused bit of a 7-step path", with_bit(binary(valid_steps(7)), 7)},
-      {"one byte too many", three <> <<0>>},
-      {"one byte too few", binary_part(three, 0, byte_size(three) - 1)},
-      {"depth 0 with a trailing byte", <<0, 0>>},
-      {"depth 65", <<65>> <> :binary.copy(<<0>>, 9 + 65 * 32)},
-      {"no bytes", <<>>}
+      {"direction bit past the depth", <<1, 3>> <> siblings, "unused_direction_bits"},
+      {"highest unused bit of a 7-step path", with_bit(binary(valid_steps(7)), 7),
+       "unused_direction_bits"},
+      {"one byte too many", three <> <<0>>, "wrong_length"},
+      {"one byte too few", binary_part(three, 0, byte_size(three) - 1), "wrong_length"},
+      {"depth 0 with a trailing byte", <<0, 0>>, "wrong_length"},
+      {"no bytes", <<>>, "wrong_length"},
+      {"depth 65", <<65>> <> :binary.copy(<<0>>, 9 + 65 * 32), "too_many_steps"},
+      {"depth 65 is checked before the length", <<65>>, "too_many_steps"},
+      {"the length is checked before unused bits", <<1, 3>>, "wrong_length"}
     ]
-    |> Enum.map(fn {name, bytes} -> obj([{"name", name}, {"binary_hex", hex(bytes)}]) end)
+    |> Enum.map(fn {name, bytes, error} ->
+      obj([{"name", name}, {"binary_hex", hex(bytes)}, {"error", error}])
+    end)
   end
 
   defp with_bit(<<depth, bits::little-size(8), rest::binary>>, bit) do
@@ -316,7 +321,9 @@ defmodule MerkleVectors do
        String.slice(text, 0, half) <> "\n" <> String.slice(text, half..-1//1)},
       {"embedded space", String.slice(text, 0, half) <> " " <> String.slice(text, half..-1//1)}
     ]
-    |> Enum.map(fn {name, text} -> obj([{"name", name}, {"base64url", text}]) end)
+    |> Enum.map(fn {name, text} ->
+      obj([{"name", name}, {"base64url", text}, {"error", "invalid_base64url"}])
+    end)
   end
 
   defp document do

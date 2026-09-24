@@ -41,9 +41,14 @@ defmodule Truestamp.Merkle.Codec do
     IO.iodata_to_binary([<<depth, bits::little-size(width)>> | Enum.reverse(siblings)])
   end
 
+  # Checks run in this order: the depth byte, the length it implies, then the unused
+  # direction bits.
   def steps_from_binary(<<0>>), do: {:ok, []}
 
-  def steps_from_binary(<<depth, rest::binary>>) when depth > 0 and depth <= @max_steps do
+  def steps_from_binary(<<depth, _rest::binary>>) when depth > @max_steps,
+    do: {:error, :too_many_steps}
+
+  def steps_from_binary(<<depth, rest::binary>>) when depth > 0 do
     width = div(depth + 7, 8) * 8
     sibling_bytes = depth * @digest_bytes
 
@@ -52,20 +57,17 @@ defmodule Truestamp.Merkle.Codec do
         if Bitwise.bsr(bits, depth) == 0 do
           {:ok, decode_steps(depth, bits, siblings)}
         else
-          {:error, "Invalid proof binary: direction bits past depth #{depth} are set"}
+          {:error, :unused_direction_bits}
         end
 
       _ ->
-        {:error,
-         "Invalid proof binary: expected #{div(width, 8) + sibling_bytes} bytes after depth, got #{byte_size(rest)}"}
+        {:error, :wrong_length}
     end
   end
 
-  def steps_from_binary(<<depth, _rest::binary>>) when depth > @max_steps do
-    {:error, "Proof depth #{depth} exceeds maximum #{@max_steps}"}
-  end
-
-  def steps_from_binary(_), do: {:error, "Invalid proof binary format"}
+  # No bytes at all, or a depth of 0 followed by anything.
+  def steps_from_binary(binary) when is_binary(binary), do: {:error, :wrong_length}
+  def steps_from_binary(_not_a_binary), do: {:error, :invalid_binary}
 
   def encode_proof_base64(steps),
     do: steps |> steps_to_binary() |> Base.url_encode64(padding: false)
@@ -78,11 +80,11 @@ defmodule Truestamp.Merkle.Codec do
          ^text <- Base.url_encode64(binary, padding: false) do
       steps_from_binary(binary)
     else
-      _ -> {:error, "Invalid base64url encoding"}
+      _ -> {:error, :invalid_base64url}
     end
   end
 
-  def decode_proof_base64(_not_a_binary), do: {:error, "Invalid base64url encoding"}
+  def decode_proof_base64(_not_a_text), do: {:error, :invalid_base64url}
 
   defp decode_steps(depth, bits, siblings) do
     for i <- 0..(depth - 1) do
