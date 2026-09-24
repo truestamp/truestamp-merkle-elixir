@@ -440,8 +440,8 @@ defmodule TruestampMerkleDemo do
     IO.puts("Demo 7: Performance Benchmarks")
     IO.puts("=" <> String.duplicate("=", 40))
 
-    # Test different sizes including the million leaf target
-    sizes = [10, 100, 1000, 10_000, 100_000, 1_000_000]
+    # Test different sizes, up to 100,000 leaves
+    sizes = [10, 100, 1000, 10_000, 100_000]
 
     Enum.each(sizes, fn size ->
       IO.puts("Testing with #{format_number(size)} elements...")
@@ -488,8 +488,8 @@ defmodule TruestampMerkleDemo do
       IO.puts("  Avg bytes per element: #{Float.round(proof_bytes / length(proof), 1)}")
       IO.puts("  Verification: #{format_time(verify_ms)} (valid: #{result})")
 
-      # For the million and ten million leaf tests, show a sample proof
-      if size in [1_000_000, 10_000_000] do
+      # For the largest tree, show a sample proof
+      if size == 100_000 do
         IO.puts("\n  Sample proof structure for #{random_key}:")
 
         Enum.with_index(proof, 1)

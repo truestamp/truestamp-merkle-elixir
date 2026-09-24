@@ -86,6 +86,38 @@ whenever padding applies:
 `SHA-256("bigleaf<i>")` have the root
 `f8c3f9a207a67fc22a297edcdf1dc0f17840ee9c8648ee3c8a7e5a71e5e42b92`, at depth 9.
 
+## Performance
+
+Measured with `mix run bench/performance.exs` on an Apple M3 Max with 64 GB, running
+Elixir 1.20.1 on OTP 29. A tree is built by one process; the build time is the median of
+three builds, and the proof and verify times are means over up to 10,000 random entries.
+
+| Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1,000 | 10 | 1.7 ms | 574,383/s | 273.1 KB | 2.2 us | 11.8 us | 323 B |
+| 10,000 | 14 | 18.9 ms | 529,073/s | 3.0 MB | 3.0 us | 15.4 us | 451 B |
+| 100,000 | 17 | 308.7 ms | 323,977/s | 28.4 MB | 5.2 us | 19.8 us | 548 B |
+
+- **Build rate** falls as the tree grows, from over 500,000 entries a second at 10,000
+  entries to about 320,000 at 100,000.
+- **Proofs** hold one sibling per level, so their time and size grow with the depth, the
+  base-2 logarithm of the padded entry count. Proof size is the compact binary form: a
+  depth byte, the direction bits, and 32 bytes per step.
+- **Verification** checks the format of every value it is given and hashes once per step,
+  so it costs more than producing a proof, and stays under 20 microseconds at 100,000
+  entries.
+- **Tree memory** is the finished tree's heap size, counting a shared term once: about
+  300 bytes per entry. Padding adds to it: 10,000 entries pad to 16,384 leaves, and every
+  level above them is sized for 16,384. Building needs more than this while the input,
+  the tree's levels and the finished tree are all alive; the `Truestamp.Merkle` module
+  documentation gives sizing guidance for large trees.
+- Timings vary between runs by a few percent, and by more on a busy machine.
+
+Two more scripts cover the rest: `mix run bench/proof_generation_benchmark.exs` times
+proof generation in bulk and compares the ways to build a tree (`new/2`, the builder, and
+the stream, map and tuple wrappers), and `mix run examples/truestamp_merkle_demo.exs`
+walks through the API.
+
 ## License
 
 Apache License 2.0. See [LICENSE](./LICENSE).
