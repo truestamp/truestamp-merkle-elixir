@@ -14,14 +14,12 @@ defmodule Truestamp.Merkle do
   whatever that key names. The tree sorts, pads and hashes those into leaves. What a key
   identifies, and what the digest was taken over, are entirely yours to decide.
 
-  Size a large workload by memory before you size it by time. A finished tree retains
-  roughly 300 MB of heap per million leaves, and construction costs a good deal more
-  than that while the input list, the intermediate levels and the finished tree are all
-  alive at once: building a million leaves from a million-element list peaked around
-  1.4 GB of total BEAM heap when measured. Budget on that order, around 1.5 GB per
-  million leaves, rather than on the retained size. A few million leaves is comfortable
-  on an ordinary server. Ten million is a different proposition and worth a trial run
-  on the real hardware before you commit to it.
+  Size a large workload by memory before you size it by time. A finished tree holds about
+  300 bytes of heap per entry, and building one needs a good deal more while the input
+  list, the tree's levels and the finished tree are all alive at once: budget around
+  1.5 GB per million entries rather than the retained size. The README's Performance
+  section has measured build, proof and verification times, and `bench/performance.exs`
+  reproduces them on your hardware.
 
   What a proof does and does not attest, and the reasoning behind each check here, are in
   `SECURITY.md` at the root of this repository. The tree contract a port must reproduce,
@@ -105,133 +103,13 @@ defmodule Truestamp.Merkle do
       iex> Truestamp.Merkle.proof(single_tree, "single-entry")
       []
 
-  ## Test Vectors
+  ## Known Answers
 
-  Cross-implementation verification vectors covering empty trees, single leaves,
-  even/odd leaf counts, and padding behavior. These are this library's vectors: reproduce
-  them with the rules above, not with another library's tree. The keys below are input
-  data, so a port has to feed in exactly the keys shown to get the roots shown.
-
-  ### Test Vector 0: Empty Tree
-
-      iex> tree = Truestamp.Merkle.new([])
-      iex> Truestamp.Merkle.root(tree)
-      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-      iex> tree.tree_depth
-      0
-      iex> Truestamp.Merkle.proof(tree, "any-key")
-      nil
-
-  ### Test Vector 1: Single Leaf
-
-      iex> data = [
-      ...>   %{"key" => "entry1", "hash" => "1111111111111111111111111111111111111111111111111111111111111111"}
-      ...> ]
-      iex> tree = Truestamp.Merkle.new(data)
-      iex> Truestamp.Merkle.root(tree)
-      "4635e1fa62a599a7880a8d14a56f720a1d40f6e5448ab5a5e39bedc8bd87fa8e"
-      iex> tree.tree_depth
-      0
-      iex> Truestamp.Merkle.proof(tree, "entry1")
-      []
-
-  ### Test Vector 2: Two Leaves
-
-      iex> data = [
-      ...>   %{"key" => "entry-1", "hash" => "2222222222222222222222222222222222222222222222222222222222222222"},
-      ...>   %{"key" => "entry-2", "hash" => "3333333333333333333333333333333333333333333333333333333333333333"}
-      ...> ]
-      iex> tree = Truestamp.Merkle.new(data)
-      iex> Truestamp.Merkle.root(tree)
-      "96cfe136315282442cd0133b934dd99622a510c075930239725ced808ce7dfa0"
-      iex> tree.tree_depth
-      1
-      iex> Truestamp.Merkle.proof(tree, "entry-1")
-      ["r:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"]
-      iex> Truestamp.Merkle.proof(tree, "entry-2")
-      ["l:bc6f27de60abf5319d16ff4c98fe3c42022c84f6a7a2b207c8df19b0ec3d8d58"]
-
-  ### Test Vector 3: Three Leaves (Padding to 4)
-
-      iex> data = [
-      ...>   %{"key" => "entry-1", "hash" => "4444444444444444444444444444444444444444444444444444444444444444"},
-      ...>   %{"key" => "entry-2", "hash" => "5555555555555555555555555555555555555555555555555555555555555555"},
-      ...>   %{"key" => "entry-3", "hash" => "6666666666666666666666666666666666666666666666666666666666666666"}
-      ...> ]
-      iex> tree = Truestamp.Merkle.new(data)
-      iex> Truestamp.Merkle.root(tree)
-      "d8c7e05bf72cf133500667297ffa73ba97900e6f2adcee472bfb8a5f0db9f6d3"
-      iex> tree.tree_depth
-      2
-      iex> Truestamp.Merkle.proof(tree, "entry-1")
-      ["r:a23e5f60b577afd1d5d31a3efa2c95b1586648dbb4f0aa254d3de36cf3966d85", "r:b8f04324df5a0d8b64f89465f58da9c385de8e0b27c86783093988ef86f1bc25"]
-      iex> Truestamp.Merkle.proof(tree, "entry-3")
-      ["r:d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319", "l:ad87655bd0d907088388cf532d6495ab11ce7b2db53e3247783a6a8108046f5a"]
-
-  ### Test Vector 4: Four Leaves
-
-      iex> data = [
-      ...>   %{"key" => "entry-1", "hash" => "7777777777777777777777777777777777777777777777777777777777777777"},
-      ...>   %{"key" => "entry-2", "hash" => "8888888888888888888888888888888888888888888888888888888888888888"},
-      ...>   %{"key" => "entry-3", "hash" => "9999999999999999999999999999999999999999999999999999999999999999"},
-      ...>   %{"key" => "entry-4", "hash" => "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-      ...> ]
-      iex> tree = Truestamp.Merkle.new(data)
-      iex> Truestamp.Merkle.root(tree)
-      "28a9f015a225b68dc7ada02ad7474e0e42fd2bcc262802bda2cac48626e14cba"
-      iex> tree.tree_depth
-      2
-      iex> Truestamp.Merkle.proof(tree, "entry-1")
-      ["r:048d913ab15694f3b6675c7889ee4f5588eaa484fd25c9646289ed601aeb2c28", "r:df3e04295fa98f06cfebf6b09eb04852d517f8c5385ce8019e5e50f978b8c7ed"]
-      iex> Truestamp.Merkle.proof(tree, "entry-4")
-      ["l:8fb240aea60b45db01c7a243e82d36c5695cab53142a64996ef946eb8788326a", "l:d764cc06dcdfe5b7f902f0605de2ff64fb1966ef182f991dc4738d7b1bb2584a"]
-
-  ### Test Vector 5: Five Leaves (Padding to 8)
-
-      iex> data = [
-      ...>   %{"key" => "entry-1", "hash" => "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-      ...>   %{"key" => "entry-2", "hash" => "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
-      ...>   %{"key" => "entry-3", "hash" => "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
-      ...>   %{"key" => "entry-4", "hash" => "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
-      ...>   %{"key" => "entry-5", "hash" => "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
-      ...> ]
-      iex> tree = Truestamp.Merkle.new(data)
-      iex> Truestamp.Merkle.root(tree)
-      "797eb8e773660265c45bf3c2a538f7e223def7191324599d61426b2d625b77bc"
-      iex> tree.tree_depth
-      3
-      iex> Truestamp.Merkle.proof(tree, "entry-1")
-      ["r:2e3aa189e1f666b2c3e864e21d978388020b89a6725e31ff2657bad5840a7f02", "r:13f9584406a6feceda026bdb8f5ae4016ff806592c78288d18202ae78abe7379", "r:df312295efe541715fe1698fc92374e8653dd41cd953926f95c77dab4ad25e23"]
-      iex> Truestamp.Merkle.proof(tree, "entry-5")
-      ["r:d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319", "r:3af5290a630909c56594370a5d53f1fad8231179978bedb08410b348475c0176", "l:1bee6619e5c929fab37bf20d256e46727c005c5779a7576ee07869d084bbb6c0"]
-
-  ### Test Vector 6: Seven Leaves (Padding to 8)
-
-      iex> data = [
-      ...>   %{"key" => "entry-1", "hash" => "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
-      ...>   %{"key" => "entry-2", "hash" => "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"},
-      ...>   %{"key" => "entry-3", "hash" => "23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01"},
-      ...>   %{"key" => "entry-4", "hash" => "3456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012"},
-      ...>   %{"key" => "entry-5", "hash" => "456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"},
-      ...>   %{"key" => "entry-6", "hash" => "56789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234"},
-      ...>   %{"key" => "entry-7", "hash" => "6789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345"}
-      ...> ]
-      iex> tree = Truestamp.Merkle.new(data)
-      iex> Truestamp.Merkle.root(tree)
-      "ee732f21e935db7f21e285436d8f100220d6dd10cda89d9f280d5a12459532d0"
-      iex> tree.tree_depth
-      3
-      iex> Truestamp.Merkle.proof(tree, "entry-1")
-      ["r:2a973eab8f2f8e75a78cb2f2091eed699ae989ad9df4d3f43aa73bfeb835ef2c", "r:3a28889d826c485dec4abbd2926c2584d52e143e3bd441f65d8d62baa76ee636", "r:442c8c67a33da213e5901d0e16950622466d1656a838d7f78769ff41dbebb87b"]
-      iex> Truestamp.Merkle.proof(tree, "entry-7")
-      ["r:d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319", "l:1c756beb6256bde51c213814e963a2b7138ead5e915b4f2ca78ed9bc3aedacbf", "l:4d19e260baa0c2af21481e05bcd9ae74089db64244ac3f50569c0a8300a088c8"]
-
-  ### Verification Example
-
-      iex> proof = ["r:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"]
-      iex> root = "96cfe136315282442cd0133b934dd99622a510c075930239725ced808ce7dfa0"
-      iex> Truestamp.Merkle.verify("2222222222222222222222222222222222222222222222222222222222222222", proof, root)
-      true
+  `vectors/merkle.json` in this repository holds the known answers a port of the tree
+  must reproduce: roots, paths and their encodings for trees of 0 to 7 entries, 300
+  entries and a set of mixed keys, plus the inputs that construction, `walk/3` and the
+  decoders must refuse. `vectors/generate.exs` writes it from the tree contract in
+  `README.md` without using this module, and the tests hold this module to every value.
 
   ## API Summary
 
@@ -299,14 +177,10 @@ defmodule Truestamp.Merkle do
   @doc """
   Creates a new Merkle tree from a list of key-hash maps.
 
-  **This is the fastest tree construction method**, and it is also the one whose cost
-  stays closest to linear as the entry count grows: roughly 160k entries/sec at both
-  100k and 1M entries on an Apple M-series laptop. Treat that as indicative, since the
-  same build varies by more than a factor of two with the calling process's heap state.
-  Use this when all entries are available upfront. For streaming or incremental input,
-  use the Builder pattern or convenience wrappers
-  (`from_stream/2`, `from_maps/2`, `from_tuples/2`). `Merkle.Builder` carries the
-  full comparison.
+  **This is the fastest tree construction method.** Use it when all entries are available
+  upfront. For streaming or incremental input, use the builder or the convenience
+  wrappers (`from_stream/2`, `from_maps/2`, `from_tuples/2`), which cost more for their
+  duplicate detection. The README's Performance section has measured figures.
 
   Input data should be a list of maps with "key" and "hash" keys:
   - "key": Alphanumeric string with optional .-_ separators (max 36 chars)
@@ -608,11 +482,10 @@ defmodule Truestamp.Merkle do
   This is the most flexible convenience wrapper - it works with any data type
   by using the provided functions to extract keys and hashes.
 
-  **Performance note**: slower than `new/1`, by roughly a quarter at 100k entries and
-  by more than that as the count grows, because of the per-entry extractor calls and
-  the builder's duplicate detection. Use `new/1` when all entries are available upfront
-  and performance is critical. See `Merkle.Builder` docs for measured figures and how
-  much to trust them.
+  **Performance note**: slower than `new/2`, because of the per-entry extractor calls and
+  the builder's duplicate detection. Use `new/2` when all entries are available upfront
+  and performance is critical. `bench/proof_generation_benchmark.exs` compares the
+  construction paths.
 
   ## Options
 
@@ -640,15 +513,14 @@ defmodule Truestamp.Merkle do
   @doc """
   Creates a Merkle tree from an enumerable of maps with "key" and "hash" fields.
 
-  This is the stream-equivalent of `new/1` - use it when your data is already
+  This is the stream equivalent of `new/2`: use it when your data is already
   in the standard `%{"key" => ..., "hash" => ...}` format.
 
-  **Performance note**: this is the builder path with no conversion on top, so it
-  measures within a few percent of `builder + finalize`: close to `new/1` at 100k
-  entries and around 2.5x slower at a million, where the duplicate-detection map
-  starts to cost real time. Use `new/1` when all entries are available upfront and
-  performance is critical. See `Merkle.Builder` docs for measured figures and how
-  much to trust them.
+  **Performance note**: this is the builder path with no conversion on top, so it costs
+  what `builder + finalize` costs: more than `new/2`, by a margin that grows with the
+  entry count as the duplicate-detection map fills. Use `new/2` when all entries are
+  available upfront and performance is critical. `bench/proof_generation_benchmark.exs`
+  compares the construction paths.
 
   ## Options
 
@@ -666,10 +538,10 @@ defmodule Truestamp.Merkle do
   @doc """
   Creates a Merkle tree from an enumerable of `{key, hash}` tuples.
 
-  **Performance note**: the slowest of the three wrappers, around 1.5x `new/1` at
-  100k entries, because every tuple is turned into a map before the builder sees it.
-  Use `new/1` when all entries are available upfront and performance is critical. See
-  `Merkle.Builder` docs for measured figures and how much to trust them.
+  **Performance note**: slower than `new/2`, because every tuple is turned into a map
+  before the builder sees it. Use `new/2` when all entries are available upfront and
+  performance is critical. `bench/proof_generation_benchmark.exs` compares the
+  construction paths.
 
   ## Options
 
