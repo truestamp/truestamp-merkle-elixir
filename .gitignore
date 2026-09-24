@@ -1,0 +1,8 @@
+/_build/
+/deps/
+/tmp/
+/cover/
+/doc/
+erl_crash.dump
+*.ez
+truestamp_merkle-*.tar
