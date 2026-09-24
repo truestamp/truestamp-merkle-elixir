@@ -12,11 +12,33 @@ Truestamp builds every block's tree to the contract below, and the commitments i
 records on public blockchains bind those roots. The construction rules are therefore
 frozen: changing one would change roots that are already on chain.
 
-**Status:** 0.1.0, not yet published to Hex. This README is a draft of the contract. It
-is complete for how a tree is built; how a path is walked and stored is added with the
-step codec.
+**Status:** 0.1.0, not yet published to Hex.
 
-## The tree contract (draft)
+## Use
+
+```elixir
+entries = [%{"key" => "a", "hash" => digest_a}, %{"key" => "b", "hash" => digest_b}]
+tree = Truestamp.Merkle.new(entries)
+root = Truestamp.Merkle.root(tree)
+steps = Truestamp.Merkle.proof(tree, "a")
+
+{:ok, ^root} = Truestamp.Merkle.walk(digest_a, steps)
+true = Truestamp.Merkle.verify(digest_a, steps, root, max_steps: 32)
+
+binary = Truestamp.Merkle.steps_to_binary(steps)
+{:ok, ^steps} = Truestamp.Merkle.steps_from_binary(binary)
+```
+
+Until it is on Hex, depend on it by commit:
+
+```elixir
+{:truestamp_merkle, github: "truestamp/truestamp-merkle-elixir", ref: "<full commit id>"}
+```
+
+The module documentation covers every function, and `SECURITY.md` what a proof does and
+does not attest.
+
+## The tree contract
 
 ### Inputs
 
@@ -55,6 +77,42 @@ count at the largest power of two smaller than it and adds no padding. A verifie
 written strictly to RFC 6962 reproduces a root from this library only when the entry
 count is 0 or a power of two.
 
+### Proving an entry
+
+An entry's inclusion path lists the sibling at each level of the tree, from its leaf up
+to the root. Each step is `l:` or `r:` followed by the sibling's 64 lowercase hex
+characters: `l` means the sibling sits to the left of the running hash, `r` to the right.
+
+1. Start from the entry's leaf, `SHA-256(0x00 || digest)`.
+2. For an `l` step the running hash becomes `SHA-256(0x01 || sibling || running)`, and
+   for an `r` step `SHA-256(0x01 || running || sibling)`.
+3. The hash after the last step is the root the path implies. It proves the entry only
+   when it equals a root obtained some other way.
+
+A one-entry tree's path is empty, and its root is the leaf itself. A path is refused,
+never repaired:
+
+- A step must be exactly `l:` or `r:` and 64 lowercase hex characters. Uppercase, a
+  trailing newline and a bare hash without its direction are all refused.
+- The value proved must be a valid digest, and never the reserved digest. The padding
+  leaf's hash may appear as a sibling, and is valid there.
+- A path longer than the cap is refused before any step is read. The cap is 64 steps,
+  and a caller can lower it (Truestamp uses 32).
+
+### Storing a path
+
+A path has one binary form:
+
+    byte 0         the number of steps, 0 to 64
+    next bytes     ceil(steps / 8) direction bytes, least significant bit first: bit N
+                   is 1 when step N is `r`, and every bit from the step count up is 0
+    the rest       each sibling's 32 raw bytes, bottom to top
+
+The empty path is the single byte `0x00`. Decoding accepts only this canonical form: a
+set bit past the step count, a missing byte or a trailing one is refused, so one path
+never has two encodings. For text, the form is written in unpadded base64url, and the
+decoder accepts only the one spelling the encoder writes.
+
 ### Limits
 
 - An inclusion proof holds at most 64 steps.
@@ -87,9 +145,15 @@ whenever padding applies:
 | 3 | `738707d8051d65bb5b11d36cac93f7e5dccdee4676e836800a5d4e5c444103f1` | `f078fbabd10cf51db1dc3552d960996e0fdae24ca5559d3aec20bf04cb65c441` |
 | 5 | `2012533b81a14bd8c0ba9172d14ca4bd761449bf10065c5baf89bc487497e891` | `3d7804d812524d931d28e05e6ee06d73a1f4c8c3a4f47a4210b14af54794b6fa` |
 
+**A path.** In the two-entry tree, `key01`'s path is the single step
+`r:d78acbc356fa171ce40bb72ffa74cbde06c36aefc2678a9af18d3975581e969f`, whose binary form
+is 34 bytes, or `AQHXisvDVvoXHOQLty_6dMveBsNq78JniprxjTl1WB6Wnw` in base64url. The tests
+pin `key01`'s path and binary form for n = 1 to 7, and `lk0001`'s for the tree below.
+
 **A larger tree.** 300 entries with keys `lk0001` through `lk0300` and digests
 `SHA-256("bigleaf<i>")` have the root
 `f8c3f9a207a67fc22a297edcdf1dc0f17840ee9c8648ee3c8a7e5a71e5e42b92`, at depth 9.
+`lk0001`'s path has nine steps, so its direction bits take two bytes.
 
 ## Performance
 

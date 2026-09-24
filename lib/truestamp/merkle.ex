@@ -77,7 +77,7 @@ defmodule Truestamp.Merkle do
   ## Limits and Where They Apply
 
   The 64-step proof cap is a real bound on work: it is what keeps `walk/3`, `verify/4`,
-  `decode_proof/1`, and `decode_proof_base64/1` cheap on bytes from a stranger. Those
+  `steps_from_binary/1`, and `decode_proof_base64/1` cheap on bytes from a stranger. Those
   four are the entry points safe to put in front of untrusted callers, and `walk/3` and
   `verify/4` take a lower cap through `:max_steps`.
 
@@ -240,6 +240,7 @@ defmodule Truestamp.Merkle do
   - `proof/2` - Generate inclusion proof for key (returns `nil` if not found)
   - `walk/3` - Recompute the root an inclusion path implies (returns `{:ok, root}` or an error)
   - `verify/4` - Check an inclusion path against a root hash (returns boolean)
+  - `steps_to_binary/1`, `steps_from_binary/1` - The compact binary form of a path, for storage
   - `builder/0`, `add_entry/2`, `add_entries/2`, `finalize/2` - Streaming builder pattern
   - `from_stream/2`, `from_maps/2`, `from_tuples/2` - Convenience constructors
 
@@ -252,15 +253,16 @@ defmodule Truestamp.Merkle do
     invalid options
   - `verify/4` returns `false` for any invalid input or failed verification, and raises
     only for invalid options
-  - `encode_proof/1` and `encode_proof_base64/1` return the encoded value directly and raise
+  - `steps_to_binary/1` and `encode_proof_base64/1` return the encoded value directly and raise
     `ArgumentError` for a proof that would not survive the round trip
-  - `decode_proof/1` and `decode_proof_base64/1` take untrusted bytes, so they return
+  - `steps_from_binary/1` and `decode_proof_base64/1` take untrusted bytes, so they return
     `{:ok, proof}` or `{:error, reason}` rather than raising
   """
 
-  # Longest proof walk/3, verify/4 and decode_proof/1 will process, and so the ceiling on
-  # the hashing an untrusted proof can ask for. 64 steps spans a tree of
-  # 2^64 = 18,446,744,073,709,551,616 leaves, past anything that could be built.
+  # Longest proof walk/3, verify/4 and steps_from_binary/1 will process, and so
+  # the ceiling on the hashing an untrusted proof can ask for. 64 steps spans a
+  # tree of 2^64 = 18,446,744,073,709,551,616 leaves, past anything that could be
+  # built.
   @max_proof_depth 64
 
   # Ceiling on the depth arithmetic, which keeps the leaf-count math in range. Not a
@@ -954,25 +956,27 @@ defmodule Truestamp.Merkle do
   # ── Compact Proof Encoding ──────────────────────────────────────────
 
   @doc """
-  Encode a proof list into a compact binary format.
+  Encodes a path as the compact binary form used for storage.
 
-  The binary format packs direction flags into a bitfield and stores sibling
-  hashes as raw 32-byte values, eliminating the overhead of hex encoding and
-  "l:"/"r:" string prefixes.
+  The binary form packs the directions into a bitfield and stores each sibling as its
+  raw 32 bytes, without the hex spelling or the `l:` / `r:` prefixes. It is the one
+  canonical binary for a path: `steps_from_binary/1` accepts exactly what this function
+  produces and nothing else.
 
   ## Binary Layout
 
       byte 0:      depth (uint8, number of proof steps)
-      bytes 1..D:  direction bitfield, ceil(depth/8) bytes
+      bytes 1..D:  direction bitfield, ceil(depth/8) bytes, little-endian
                    bit N: 0 = left sibling ("l:"), 1 = right sibling ("r:")
+                   bits from depth up are always 0
       bytes D+1..: depth * 32 bytes of sibling hashes (raw binary, bottom to top)
 
   ## Input Requirements
 
   The proof list must hold at most #{@max_proof_depth} steps, and every step must be
   `"l:"` or `"r:"` followed by a #{@expected_hash_hex_chars}-character lowercase hex
-  SHA-256 hash. These are the same invariants `decode_proof/1` enforces, so anything
-  this function accepts decodes back to exactly what was passed in.
+  SHA-256 hash. These are the same invariants `steps_from_binary/1` enforces, so
+  anything this function accepts decodes back to exactly what was passed in.
 
   ## Return Value and Errors
 
@@ -980,26 +984,26 @@ defmodule Truestamp.Merkle do
   validated input cannot fail. Anything that would not survive the round trip raises
   `ArgumentError` instead: a list longer than #{@max_proof_depth}, or an element that
   is not a well formed `"l:"` / `"r:"` step. Decoding takes untrusted bytes, so
-  `decode_proof/1` returns `{:ok, proof}` or `{:error, reason}`.
+  `steps_from_binary/1` returns `{:ok, steps}` or `{:error, reason}`.
 
   ## Examples
 
       iex> proof = ["r:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"]
-      iex> binary = Truestamp.Merkle.encode_proof(proof)
+      iex> binary = Truestamp.Merkle.steps_to_binary(proof)
       iex> byte_size(binary)
       34
-      iex> {:ok, decoded} = Truestamp.Merkle.decode_proof(binary)
+      iex> {:ok, decoded} = Truestamp.Merkle.steps_from_binary(binary)
       iex> decoded == proof
       true
 
-      iex> Truestamp.Merkle.encode_proof([])
+      iex> Truestamp.Merkle.steps_to_binary([])
       <<0>>
 
   """
-  @spec encode_proof(proof()) :: binary()
-  def encode_proof([]), do: <<0::8>>
+  @spec steps_to_binary(proof()) :: binary()
+  def steps_to_binary([]), do: <<0::8>>
 
-  def encode_proof(proof_list) when is_list(proof_list) do
+  def steps_to_binary(proof_list) when is_list(proof_list) do
     depth = length(proof_list)
 
     if depth > @max_proof_depth do
@@ -1021,9 +1025,10 @@ defmodule Truestamp.Merkle do
     <<depth::8, direction_bits::little-size(bitfield_bytes * 8), hashes::binary>>
   end
 
-  # Accept exactly what decode_proof/1 can produce: an "l:" or "r:" prefix followed by
-  # @expected_hash_hex_chars lowercase hex characters. Returns the direction bit and the
-  # hex hash, or raises for anything that would not survive the round trip.
+  # Accept exactly what steps_from_binary/1 can produce: an "l:" or "r:" prefix
+  # followed by @expected_hash_hex_chars lowercase hex characters. Returns the
+  # direction bit and the hex hash, or raises for anything that would not survive
+  # the round trip.
   defp encodable_proof_element!(
          <<prefix::binary-size(2), hex_hash::binary-size(@expected_hash_hex_chars)>> = item
        )
@@ -1051,32 +1056,45 @@ defmodule Truestamp.Merkle do
   defp lowercase_hex_binary?(_), do: false
 
   @doc """
-  Decode a compact binary proof back to the standard proof list format.
+  Decodes the compact binary form back to a path of `l:` / `r:` steps.
+
+  It takes untrusted bytes, so it returns `{:ok, steps}` or `{:error, reason}` and never
+  raises. It accepts only the canonical encoding `steps_to_binary/1` produces: a depth of
+  0 to #{@max_proof_depth}, exactly `ceil(depth / 8)` direction bytes with every bit from
+  `depth` up clear, and exactly `depth` 32-byte siblings, with nothing after them. A set
+  unused direction bit would give one path several encodings, so it is refused.
 
   ## Examples
 
       iex> binary = <<1, 1, 94, 92, 174, 175, 194, 113, 85, 195, 104, 182, 242, 1, 16, 125,
       ...>   111, 139, 39, 7, 71, 206, 99, 106, 197, 23, 74, 86, 198, 225, 46, 248, 154, 209>>
-      iex> {:ok, proof} = Truestamp.Merkle.decode_proof(binary)
-      iex> proof
+      iex> {:ok, steps} = Truestamp.Merkle.steps_from_binary(binary)
+      iex> steps
       ["r:5e5caeafc27155c368b6f201107d6f8b270747ce636ac5174a56c6e12ef89ad1"]
 
-      iex> {:ok, proof} = Truestamp.Merkle.decode_proof(<<0>>)
-      iex> proof
-      []
+      iex> Truestamp.Merkle.steps_from_binary(<<0>>)
+      {:ok, []}
+
+      iex> Truestamp.Merkle.steps_from_binary(<<1, 3>> <> :binary.copy(<<0>>, 32))
+      {:error, "Invalid proof binary: direction bits past depth 1 are set"}
 
   """
-  @spec decode_proof(binary()) :: {:ok, proof()} | {:error, term()}
-  def decode_proof(<<0::8>>), do: {:ok, []}
+  @spec steps_from_binary(binary()) :: {:ok, proof()} | {:error, term()}
+  def steps_from_binary(<<0::8>>), do: {:ok, []}
 
-  def decode_proof(<<depth::8, rest::binary>>) when depth > 0 and depth <= @max_proof_depth do
+  def steps_from_binary(<<depth::8, rest::binary>>)
+      when depth > 0 and depth <= @max_proof_depth do
     bitfield_bytes = div(depth + 7, 8)
     expected_hash_bytes = depth * 32
 
     case rest do
       <<direction_bits::little-size(^bitfield_bytes * 8),
         hashes::binary-size(^expected_hash_bytes)>> ->
-        {:ok, decode_proof_entries(depth, direction_bits, hashes)}
+        if Bitwise.bsr(direction_bits, depth) == 0 do
+          {:ok, decode_steps(depth, direction_bits, hashes)}
+        else
+          {:error, "Invalid proof binary: direction bits past depth #{depth} are set"}
+        end
 
       _ ->
         {:error,
@@ -1084,13 +1102,13 @@ defmodule Truestamp.Merkle do
     end
   end
 
-  def decode_proof(<<depth::8, _rest::binary>>) when depth > @max_proof_depth do
+  def steps_from_binary(<<depth::8, _rest::binary>>) when depth > @max_proof_depth do
     {:error, "Proof depth #{depth} exceeds maximum #{@max_proof_depth}"}
   end
 
-  def decode_proof(_), do: {:error, "Invalid proof binary format"}
+  def steps_from_binary(_), do: {:error, "Invalid proof binary format"}
 
-  defp decode_proof_entries(depth, direction_bits, hashes) do
+  defp decode_steps(depth, direction_bits, hashes) do
     for i <- 0..(depth - 1) do
       bit = Bitwise.band(Bitwise.bsr(direction_bits, i), 1)
       direction = if bit == 1, do: "r", else: "l"
@@ -1103,7 +1121,7 @@ defmodule Truestamp.Merkle do
   @doc """
   Encode a proof list to a base64url string (no padding).
 
-  Delegates to `encode_proof/1`, so it applies the same input requirements and raises
+  Delegates to `steps_to_binary/1`, so it applies the same input requirements and raises
   the same `ArgumentError` for a list longer than #{@max_proof_depth} steps or an
   element that is not a well formed `"l:"` / `"r:"` step. Returns the string directly;
   `decode_proof_base64/1` returns `{:ok, proof}` or `{:error, reason}`.
@@ -1123,27 +1141,40 @@ defmodule Truestamp.Merkle do
   @spec encode_proof_base64(proof()) :: String.t()
   def encode_proof_base64(proof_list) do
     proof_list
-    |> encode_proof()
+    |> steps_to_binary()
     |> Base.url_encode64(padding: false)
   end
 
   @doc """
-  Decode a base64url-encoded compact proof back to the standard proof list format.
+  Decodes a base64url-encoded compact path back to its steps.
+
+  Accepts only the canonical text: unpadded base64url exactly as `encode_proof_base64/1`
+  writes it, so a padded string, or one whose last character carries stray low bits, is
+  refused. The bytes then go to `steps_from_binary/1`, which accepts only the canonical
+  binary form. Returns `{:ok, steps}` or `{:error, reason}`, whatever it is given.
 
   ## Examples
 
-      iex> {:ok, proof} = Truestamp.Merkle.decode_proof_base64("AA")
-      iex> proof
-      []
+      iex> Truestamp.Merkle.decode_proof_base64("AA")
+      {:ok, []}
+      iex> Truestamp.Merkle.decode_proof_base64("AB")
+      {:error, "Invalid base64url encoding"}
 
   """
-  @spec decode_proof_base64(String.t()) :: {:ok, proof()} | {:error, term()}
+  @spec decode_proof_base64(term()) :: {:ok, proof()} | {:error, term()}
   def decode_proof_base64(base64_string) when is_binary(base64_string) do
-    case Base.url_decode64(base64_string, padding: false) do
-      {:ok, binary} -> decode_proof(binary)
-      :error -> {:error, "Invalid base64url encoding"}
+    # Base.url_decode64/2 ignores padding and the unused low bits of the last
+    # character, so several strings decode to one binary. Re-encoding and
+    # comparing keeps exactly one.
+    with {:ok, binary} <- Base.url_decode64(base64_string, padding: false),
+         ^base64_string <- Base.url_encode64(binary, padding: false) do
+      steps_from_binary(binary)
+    else
+      _ -> {:error, "Invalid base64url encoding"}
     end
   end
+
+  def decode_proof_base64(_not_a_binary), do: {:error, "Invalid base64url encoding"}
 
   # Private helper functions
 

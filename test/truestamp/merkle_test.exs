@@ -1160,8 +1160,8 @@ defmodule Truestamp.MerkleTest do
 
   describe "compact proof encoding bidirectional roundtrip" do
     test "empty proof roundtrips through binary" do
-      assert Merkle.encode_proof([]) == <<0>>
-      assert {:ok, []} = Merkle.decode_proof(<<0>>)
+      assert Merkle.steps_to_binary([]) == <<0>>
+      assert {:ok, []} = Merkle.steps_from_binary(<<0>>)
     end
 
     test "empty proof roundtrips through base64" do
@@ -1172,14 +1172,14 @@ defmodule Truestamp.MerkleTest do
 
     test "single left sibling roundtrips" do
       proof = ["l:" <> String.duplicate("ab", 32)]
-      binary = Merkle.encode_proof(proof)
-      assert {:ok, ^proof} = Merkle.decode_proof(binary)
+      binary = Merkle.steps_to_binary(proof)
+      assert {:ok, ^proof} = Merkle.steps_from_binary(binary)
     end
 
     test "single right sibling roundtrips" do
       proof = ["r:" <> String.duplicate("cd", 32)]
-      binary = Merkle.encode_proof(proof)
-      assert {:ok, ^proof} = Merkle.decode_proof(binary)
+      binary = Merkle.steps_to_binary(proof)
+      assert {:ok, ^proof} = Merkle.steps_from_binary(binary)
     end
 
     test "multi-level mixed directions roundtrip through binary" do
@@ -1191,8 +1191,8 @@ defmodule Truestamp.MerkleTest do
         "l:" <> String.duplicate("55", 32)
       ]
 
-      binary = Merkle.encode_proof(proof)
-      assert {:ok, decoded} = Merkle.decode_proof(binary)
+      binary = Merkle.steps_to_binary(proof)
+      assert {:ok, decoded} = Merkle.steps_from_binary(binary)
       assert decoded == proof
     end
 
@@ -1211,13 +1211,13 @@ defmodule Truestamp.MerkleTest do
 
     test "roundtrip preserves direction bits for all-left proof" do
       proof = for _ <- 1..10, do: "l:" <> String.duplicate("ff", 32)
-      {:ok, decoded} = proof |> Merkle.encode_proof() |> Merkle.decode_proof()
+      {:ok, decoded} = proof |> Merkle.steps_to_binary() |> Merkle.steps_from_binary()
       assert decoded == proof
     end
 
     test "roundtrip preserves direction bits for all-right proof" do
       proof = for _ <- 1..10, do: "r:" <> String.duplicate("ee", 32)
-      {:ok, decoded} = proof |> Merkle.encode_proof() |> Merkle.decode_proof()
+      {:ok, decoded} = proof |> Merkle.steps_to_binary() |> Merkle.steps_from_binary()
       assert decoded == proof
     end
 
@@ -1236,8 +1236,8 @@ defmodule Truestamp.MerkleTest do
         assert is_list(proof)
 
         # Binary roundtrip
-        binary = Merkle.encode_proof(proof)
-        assert {:ok, decoded} = Merkle.decode_proof(binary)
+        binary = Merkle.steps_to_binary(proof)
+        assert {:ok, decoded} = Merkle.steps_from_binary(binary)
         assert decoded == proof
 
         # Base64 roundtrip
@@ -1252,9 +1252,9 @@ defmodule Truestamp.MerkleTest do
 
     test "decode rejects truncated binary" do
       proof = ["l:" <> String.duplicate("ab", 32)]
-      binary = Merkle.encode_proof(proof)
+      binary = Merkle.steps_to_binary(proof)
       truncated = binary_part(binary, 0, byte_size(binary) - 1)
-      assert {:error, _} = Merkle.decode_proof(truncated)
+      assert {:error, _} = Merkle.steps_from_binary(truncated)
     end
 
     test "decode rejects invalid base64" do
@@ -1263,14 +1263,14 @@ defmodule Truestamp.MerkleTest do
 
     test "decode rejects depth exceeding max" do
       # depth byte = 65 which exceeds @max_proof_depth (64)
-      assert {:error, _} = Merkle.decode_proof(<<65, 0>>)
+      assert {:error, _} = Merkle.steps_from_binary(<<65, 0>>)
     end
 
     test "encode accepts a proof at the maximum depth" do
       # 64 steps is @max_proof_depth, the deepest proof the format can carry
       proof = for _ <- 1..64, do: "l:" <> String.duplicate("ab", 32)
 
-      assert {:ok, decoded} = Merkle.decode_proof(Merkle.encode_proof(proof))
+      assert {:ok, decoded} = Merkle.steps_from_binary(Merkle.steps_to_binary(proof))
       assert decoded == proof
     end
 
@@ -1278,7 +1278,7 @@ defmodule Truestamp.MerkleTest do
       proof = for _ <- 1..65, do: "l:" <> String.duplicate("ab", 32)
 
       assert_raise ArgumentError, ~r/at most 64 steps/, fn ->
-        Merkle.encode_proof(proof)
+        Merkle.steps_to_binary(proof)
       end
     end
 
@@ -1286,13 +1286,13 @@ defmodule Truestamp.MerkleTest do
       proof = for _ <- 1..256, do: "l:" <> String.duplicate("ab", 32)
 
       assert_raise ArgumentError, ~r/at most 64 steps/, fn ->
-        Merkle.encode_proof(proof)
+        Merkle.steps_to_binary(proof)
       end
     end
 
     test "encode rejects an unknown direction prefix" do
       assert_raise ArgumentError, ~r/Invalid proof element format/, fn ->
-        Merkle.encode_proof(["x:" <> String.duplicate("ab", 32)])
+        Merkle.steps_to_binary(["x:" <> String.duplicate("ab", 32)])
       end
     end
 
@@ -1319,7 +1319,7 @@ defmodule Truestamp.MerkleTest do
       ]
 
       for element <- malformed do
-        assert_raise ArgumentError, fn -> Merkle.encode_proof([element]) end
+        assert_raise ArgumentError, fn -> Merkle.steps_to_binary([element]) end
       end
     end
 
@@ -1327,7 +1327,7 @@ defmodule Truestamp.MerkleTest do
       good = "l:" <> String.duplicate("ab", 32)
 
       assert_raise ArgumentError, fn ->
-        Merkle.encode_proof([good, good, "r:abcd", good])
+        Merkle.steps_to_binary([good, good, "r:abcd", good])
       end
     end
 
@@ -1358,7 +1358,7 @@ defmodule Truestamp.MerkleTest do
         for %{"key" => key, "hash" => hash} <- data do
           proof = Merkle.proof(tree, key)
 
-          assert {:ok, ^proof} = Merkle.decode_proof(Merkle.encode_proof(proof))
+          assert {:ok, ^proof} = Merkle.steps_from_binary(Merkle.steps_to_binary(proof))
           assert {:ok, ^proof} = Merkle.decode_proof_base64(Merkle.encode_proof_base64(proof))
           assert Merkle.verify(hash, proof, root)
         end

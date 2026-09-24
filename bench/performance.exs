@@ -87,7 +87,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
         tree_memory(tree, n),
         format_us(proof_us),
         format_us(verify_us),
-        "#{byte_size(Merkle.encode_proof(longest))} B",
+        "#{byte_size(Merkle.steps_to_binary(longest))} B",
         ""
       ],
       " | "

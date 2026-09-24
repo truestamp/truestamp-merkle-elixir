@@ -218,20 +218,22 @@ inference, since a caller can no longer make a real leaf hash to the padding con
 
 ## Bounds, limits, and which entry points face untrusted input
 
-`walk/3`, `verify/4`, `decode_proof/1`, and `decode_proof_base64/1` are the entry points
-safe to put in front of untrusted callers. All four cap the proof at 64 steps before
-hashing anything, which is the real bound on the hashing a stranger's bytes can ask for,
-and `walk/3` and `verify/4` accept a lower cap through `:max_steps` (Truestamp passes 32).
-`walk/3` and `verify/4` never raise on their input: each validates the leaf format, the
-reserved constant, the step count (counting no further than one past the cap), and every
-step before hashing anything. `walk/3` returns `{:ok, root}` or an `{:error, reason}`
-naming the check that refused, and `verify/4`, which also checks the root's format,
-returns `false` for all of them. Only an invalid option raises. The decoders return
-`{:ok, proof}` or `{:error, reason}`. A 64-step proof spans a tree of 2^64 leaves, past
-anything that could be built, so the cap costs no legitimate proof.
+`walk/3`, `verify/4`, `steps_from_binary/1`, and `decode_proof_base64/1` are the entry
+points safe to put in front of untrusted callers. All four cap the proof at 64 steps
+before hashing anything, which is the real bound on the hashing a stranger's bytes can ask
+for, and `walk/3` and `verify/4` accept a lower cap through `:max_steps` (Truestamp passes
+32). `walk/3` and `verify/4` never raise on their input: each validates the leaf format,
+the reserved constant, the step count (counting no further than one past the cap), and
+every step before hashing anything. `walk/3` returns `{:ok, root}` or an
+`{:error, reason}` naming the check that refused, and `verify/4`, which also checks the
+root's format, returns `false` for all of them. Only an invalid option raises. The
+decoders return `{:ok, steps}` or `{:error, reason}`, and accept only the canonical binary
+form, so one path never has two encodings. A 64-step proof spans a tree of 2^64 leaves,
+past anything that could be built, so the cap costs no legitimate proof.
 
-`encode_proof/1` and `encode_proof_base64/1` raise `ArgumentError` on input that would not
-survive the round trip. They are for proofs you produced, not for bytes from a stranger.
+`steps_to_binary/1` and `encode_proof_base64/1` raise `ArgumentError` on input that would
+not survive the round trip. They are for proofs you produced, not for bytes from a
+stranger.
 
 The tree depth cap of 40 is a different kind of limit and should not be read as a load
 control. It keeps the depth arithmetic in range. A tree deep enough to reach it holds
