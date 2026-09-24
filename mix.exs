@@ -13,12 +13,16 @@ defmodule Truestamp.Merkle.MixProject do
       version: @version,
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: "Deterministic SHA-256 Merkle trees with inclusion proofs, in pure Elixir.",
       package: package(),
       source_url: @source_url
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   def application do
     [extra_applications: [:crypto]]

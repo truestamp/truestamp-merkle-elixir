@@ -1,7 +1,7 @@
 # Copyright (c) 2025-2026 Truestamp, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-defmodule Truestamp.MerkleVectorsTest do
+defmodule Truestamp.Merkle.VectorsTest do
   # The library must reproduce every value in vectors/merkle.json, which
   # vectors/generate.exs writes from the README's contract without using the
   # library.
@@ -9,14 +9,25 @@ defmodule Truestamp.MerkleVectorsTest do
 
   alias Truestamp.Merkle
 
-  @vectors_path Path.expand("../../vectors/merkle.json", __DIR__)
-  @readme_path Path.expand("../../README.md", __DIR__)
+  @vectors_path Path.expand("../../../vectors/merkle.json", __DIR__)
+  @readme_path Path.expand("../../../README.md", __DIR__)
   @external_resource @vectors_path
   @external_resource @readme_path
   @vectors @vectors_path |> File.read!() |> JSON.decode!()
 
   defp entries(tree),
     do: Enum.map(tree["entries"], &%{"key" => &1["key"], "hash" => &1["digest"]})
+
+  test "every section the tests loop over has cases, so no loop can pass empty" do
+    for section <-
+          ~w(trees entry_refusals walk_accepts walk_refusals binary_refusals base64url_refusals) do
+      assert [_ | _] = @vectors[section], section
+    end
+
+    for tree <- @vectors["trees"], tree["entries"] != [] do
+      assert [_ | _] = tree["paths"], tree["name"]
+    end
+  end
 
   describe "constants" do
     test "the empty root, the reserved digest and the padding leaf" do

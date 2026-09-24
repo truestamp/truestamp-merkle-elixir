@@ -1,14 +1,14 @@
 # Copyright (c) 2025-2026 Truestamp, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-defmodule Truestamp.MerkleWalkTest do
+defmodule Truestamp.Merkle.WalkTest do
   use ExUnit.Case, async: true
 
   alias Truestamp.Merkle
 
   # Fixtures come from vectors/merkle.json, which merkle_vectors_test.exs holds
   # the library to in full. These tests cover behavior the file cannot express.
-  @vectors_path Path.expand("../../vectors/merkle.json", __DIR__)
+  @vectors_path Path.expand("../../../vectors/merkle.json", __DIR__)
   @external_resource @vectors_path
   @vectors @vectors_path |> File.read!() |> JSON.decode!()
   @trees Map.new(@vectors["trees"], &{&1["name"], &1})
