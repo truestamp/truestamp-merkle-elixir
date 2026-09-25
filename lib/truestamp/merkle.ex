@@ -76,8 +76,9 @@ defmodule Truestamp.Merkle do
 
   ## API Summary
 
-  - `new/2` - build a tree from a list of `%{"key" => ..., "hash" => ...}` entries
+  - `new/1` - build a tree from a list of `%{"key" => ..., "hash" => ...}` entries
   - `root/1` - the root as 64 lowercase hex characters
+  - `size/1` - the number of entries: the tree size to publish beside the root
   - `proof/2` - an entry's inclusion proof, or `nil` for a key the tree does not hold
   - `walk/3` - the root an inclusion proof implies, or the check that refused it
   - `verify/4` - whether an inclusion proof reaches a given root
@@ -85,8 +86,10 @@ defmodule Truestamp.Merkle do
 
   ## Error Handling
 
-  - `new/2` raises `ArgumentError` for an invalid key or digest, a repeated key, invalid
-    options, or input that is not a list of entry maps.
+  - `new/1` raises `ArgumentError` for an invalid key or digest, a repeated key, or input
+    that is not a list of entry maps.
+  - `root/1`, `size/1` and `proof/2` take a tree built by `new/1`, and raise for anything
+    else.
   - `walk/3`, `verify/4` and `proof_from_binary/1` take untrusted input: they return
     errors (or `false`) for anything they are given, and raise only for invalid options.
   - `proof_to_binary/1` raises `ArgumentError` for a proof that is not well formed; it is
@@ -104,13 +107,17 @@ defmodule Truestamp.Merkle do
 
   defstruct [:root_hash, :leaves, :tree_depth, :tree_levels, :leaf_index]
 
-  @type t :: %__MODULE__{
-          root_hash: binary(),
-          leaves: [{binary(), binary()}],
-          tree_depth: non_neg_integer(),
-          tree_levels: [tuple()],
-          leaf_index: %{binary() => non_neg_integer()}
-        }
+  @typedoc """
+  A tree built by `new/1`. Its fields are internal: read it with `root/1`, `size/1` and
+  `proof/2`.
+  """
+  @opaque t :: %__MODULE__{
+            root_hash: binary(),
+            leaves: [{binary(), binary()}],
+            tree_depth: non_neg_integer(),
+            tree_levels: [tuple()],
+            leaf_index: %{binary() => non_neg_integer()}
+          }
 
   @typedoc "An RFC 9162 inclusion proof: the path holds 64-hex sibling hashes, bottom to top."
   @type proof :: %{
@@ -139,16 +146,11 @@ defmodule Truestamp.Merkle do
   - `"hash"`: the entry's pre-computed SHA-256 digest, exactly 64 lowercase hex
     characters. The tree hashes digests, never documents.
 
-  `new([])` builds the empty tree, whose root is `SHA-256("")`.
+  The entries are sorted byte-wise by key, so the same entries give the same root in any
+  order. `new([])` builds the empty tree, whose root is `SHA-256("")`.
 
-  ## Options
-
-    * `:sort` - `true` (the default) sorts entries byte-wise by key, which is what the
-      tree contract specifies. `false` keeps the list's order, which gives a different
-      root for a different order and is outside the contract.
-
-  An unknown option, a `:sort` that is not a boolean, an invalid key or digest, a
-  repeated key, or input that is not a list of entry maps raises `ArgumentError`.
+  An invalid key or digest, a repeated key, or input that is not a list of entry maps
+  raises `ArgumentError`.
 
   ## Examples
 
@@ -157,20 +159,43 @@ defmodule Truestamp.Merkle do
       ...>   %{"key" => "a", "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"}
       ...> ]
       iex> tree = Truestamp.Merkle.new(data)
-      iex> Enum.map(tree.leaves, &elem(&1, 0))
-      ["a", "b"]
+      iex> Truestamp.Merkle.proof(tree, "a").leaf_index
+      0
       iex> Truestamp.Merkle.root(Truestamp.Merkle.new([]))
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
   """
-  @spec new([%{binary() => binary()}], keyword()) :: t()
-  defdelegate new(entries, opts \\ []), to: Tree
+  @spec new([%{binary() => binary()}]) :: t()
+  defdelegate new(entries), to: Tree
 
   @doc """
   Returns the root as 64 lowercase hex characters.
   """
   @spec root(t()) :: String.t()
   def root(%__MODULE__{root_hash: root_hash}), do: Hash.to_hex(root_hash)
+
+  @doc """
+  Returns the number of entries: the tree's leaf count, and the `tree_size` of every proof
+  it gives. It is 0 for the empty tree.
+
+  Publish it beside the root and have verifiers check a proof's `tree_size` against it:
+  the RFC 9162 walk does not check the size, so a size read only from the proof places
+  the digest in the tree but not at its position.
+
+  ## Examples
+
+      iex> data = [
+      ...>   %{"key" => "a", "hash" => "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"},
+      ...>   %{"key" => "b", "hash" => "b2c3d4e5f6789012345678901234567890123456789012345678901234567890"}
+      ...> ]
+      iex> Truestamp.Merkle.size(Truestamp.Merkle.new(data))
+      2
+      iex> Truestamp.Merkle.size(Truestamp.Merkle.new([]))
+      0
+
+  """
+  @spec size(t()) :: non_neg_integer()
+  def size(%__MODULE__{leaf_index: index}), do: map_size(index)
 
   # ── Proving an entry ──────────────────────────────────────────────────────
 
@@ -203,7 +228,7 @@ defmodule Truestamp.Merkle do
       {:ok, position} ->
         %{
           leaf_index: position,
-          tree_size: tuple_size(hd(levels)),
+          tree_size: map_size(index),
           path: Paths.audit_path(levels, position)
         }
 

@@ -5,7 +5,7 @@ defmodule Truestamp.Merkle.Tree do
   @moduledoc false
 
   # Building a tree from a list of entries: RFC 9162 section 2.1.1's Merkle Tree Hash over
-  # the entries sorted by key (unless sort: false). There is no padding: a level with an
+  # the entries sorted byte-wise by key. There is no padding: a level with an
   # odd number of nodes carries its last node up unchanged, which builds exactly the tree
   # the RFC's recursive split at the largest power of two defines.
 
@@ -18,25 +18,20 @@ defmodule Truestamp.Merkle.Tree do
   @max_depth 40
 
   @doc """
-  Builds a tree from a list of entries. `Truestamp.Merkle.new/2` documents the entry
-  rules, the options and what raises.
+  Builds a tree from a list of entries. `Truestamp.Merkle.new/1` documents the entry rules
+  and what raises.
   """
-  @spec new(term(), term()) :: Merkle.t()
-  def new(entries, opts) do
-    sort? = sort_option!(opts)
-    build(entries, sort?)
-  end
+  @spec new(term()) :: Merkle.t()
+  def new([]), do: empty()
 
-  defp build([], _sort?), do: empty()
-
-  defp build(entries, sort?) when is_list(entries) do
-    if List.improper?(entries), do: build(:not_a_list, sort?)
+  def new(entries) when is_list(entries) do
+    if List.improper?(entries), do: new(:not_a_list)
     Input.validate_entries!(entries)
 
     pairs =
       entries
       |> Enum.map(fn %{"key" => key, "hash" => digest} -> {key, digest} end)
-      |> maybe_sort(sort?)
+      |> Enum.sort_by(&elem(&1, 0))
 
     # The index keys on the entry's key, so a key that repeats collapses two entries
     # into one. Comparing sizes catches that without a second pass; only the failing
@@ -47,7 +42,7 @@ defmodule Truestamp.Merkle.Tree do
     assemble(pairs, Enum.map(pairs, fn {_key, digest} -> Hash.leaf(digest) end), index)
   end
 
-  defp build(entries, _sort?) do
+  def new(entries) do
     raise ArgumentError,
           "Invalid input data. Expected a list of maps with \"key\" and \"hash\" keys, got: #{inspect(entries, limit: 10)}"
   end
@@ -108,22 +103,6 @@ defmodule Truestamp.Merkle.Tree do
 
   defp bit_length(0), do: 0
   defp bit_length(n), do: 1 + bit_length(Bitwise.bsr(n, 1))
-
-  defp maybe_sort(pairs, true), do: Enum.sort_by(pairs, &elem(&1, 0))
-  defp maybe_sort(pairs, false), do: pairs
-
-  # :sort is the only option, and it must be a boolean: a misspelled or non-boolean
-  # option would otherwise build a different root without a word.
-  defp sort_option!(opts) when is_list(opts) do
-    case Keyword.validate!(opts, sort: true)[:sort] do
-      sort? when is_boolean(sort?) -> sort?
-      other -> raise ArgumentError, ":sort must be true or false, got: #{inspect(other)}"
-    end
-  end
-
-  defp sort_option!(opts) do
-    raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
-  end
 
   # {key => position}, which is what keeps proof generation off a linear scan.
   defp leaf_index(pairs) do

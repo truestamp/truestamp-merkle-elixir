@@ -74,19 +74,16 @@ defmodule Truestamp.Merkle.TreeTest do
                ["-x", ".x", "10", "9", "A", "B", "_x", "a", "a0", "b"]
     end
 
-    test "sort: false keeps the list's order, and a different order gives a different root" do
+    test "entries are always sorted: a reversed list gives the sorted list's root" do
       entries = RFC9162.entries(5)
       reversed = Enum.reverse(entries)
 
-      assert Merkle.root(Merkle.new(entries)) == Merkle.root(Merkle.new(reversed))
+      assert Merkle.root(Merkle.new(reversed)) ==
+               RFC9162.hex(RFC9162.mth(RFC9162.digests(entries)))
 
-      unsorted = Merkle.new(reversed, sort: false)
-      assert Enum.map(unsorted.leaves, &elem(&1, 0)) == Enum.map(reversed, & &1["key"])
-
-      assert Merkle.root(unsorted) ==
+      # The reversed order would give another root if it were kept.
+      refute Merkle.root(Merkle.new(reversed)) ==
                RFC9162.hex(RFC9162.mth(RFC9162.digests(reversed)))
-
-      refute Merkle.root(unsorted) == Merkle.root(Merkle.new(entries))
     end
 
     property "the root does not depend on the input order" do
@@ -99,19 +96,15 @@ defmodule Truestamp.Merkle.TreeTest do
     end
   end
 
-  describe "options" do
-    test ":sort must be a boolean, and nothing else is accepted" do
-      entries = [entry("b", String.duplicate("b", 64)), entry("a")]
+  describe "size/1" do
+    test "is the entry count, every proof's tree_size, and 0 for the empty tree" do
+      for n <- [0, 1, 2, 3, 7, 8, 9, 300] do
+        entries = RFC9162.entries(n)
+        tree = Merkle.new(entries)
+        assert Merkle.size(tree) == n
 
-      assert Merkle.root(Merkle.new(entries, sort: true)) == Merkle.root(Merkle.new(entries))
-
-      for bad <- [[sort: nil], [sort: "false"], [sort: 0], [sorted: false], [cap: 1]] do
-        assert_raise ArgumentError, fn -> Merkle.new(entries, bad) end
-      end
-
-      for bad <- [%{sort: false}, nil, "opts"] do
-        assert_raise ArgumentError, ~r/options must be a keyword list/, fn ->
-          Merkle.new(entries, bad)
+        for entry <- entries do
+          assert Merkle.proof(tree, entry["key"]).tree_size == n
         end
       end
     end
@@ -153,10 +146,12 @@ defmodule Truestamp.Merkle.TreeTest do
       assert_raise ArgumentError, ~r/Invalid hash type/, fn -> Merkle.new([entry("a", 7)]) end
     end
 
-    test "each key once: a repeated key raises, whether or not the digests agree" do
-      for second <- [@digest, String.duplicate("b", 64)], sort <- [true, false] do
-        assert_raise ArgumentError, ~r/Duplicate key in input data: "dup"/, fn ->
-          Merkle.new([entry("dup"), entry("other"), entry("dup", second)], sort: sort)
+    test "each key once: a repeated key raises, naming it, whether or not the digests agree" do
+      # The repeated key is neither first in the list nor first in key order, so the
+      # message has to name the key that actually repeats.
+      for second <- [@digest, String.duplicate("b", 64)] do
+        assert_raise ArgumentError, ~r/Duplicate key in input data: "zz"/, fn ->
+          Merkle.new([entry("b"), entry("zz"), entry("a"), entry("zz", second)])
         end
       end
     end

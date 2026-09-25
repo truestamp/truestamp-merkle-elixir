@@ -85,8 +85,8 @@ hash chain and the public blockchain commitments.
 `verify/4` takes a digest, a proof and a root, and `walk/3` a digest and a proof.
 There is no key argument, and there is no place to put one. `proof/2` takes a key, but
 only to look up the entry's position; the key is never hashed into a leaf, an interior
-node, or the root. Keys affect leaf *order* (the default `sort: true` orders leaves by
-key, and a different order gives a different root) and they are checked for uniqueness at
+node, or the root. Keys affect leaf *order* (`new/1` orders leaves by key, and a
+different order would give a different root) and they are checked for uniqueness at
 construction, but no proof ever carries evidence about which key a leaf was filed under.
 
 So a valid proof for hash `H` under root `R` says exactly that `H` was in that tree. It
@@ -137,7 +137,7 @@ Every hash crossing the API as text is exactly 64 lowercase hex characters, on t
 and on the way out: the digests you supply for entries, the root hashes you get back, the
 digests being proved, and the nodes of a path alike. The binary form of a proof carries its
 nodes as raw 32-byte values. Non-canonical input is refused, never
-normalized. `new/2` raises `ArgumentError`; `walk/3` returns an error and `verify/4`
+normalized. `new/1` raises `ArgumentError`; `walk/3` returns an error and `verify/4`
 returns `false`.
 
 Refusing rather than downcasing is deliberate. Two spellings of the same hash would be
@@ -199,11 +199,11 @@ control. It turns an impossible input into a clear error: it refuses a tree of m
 2^40 (about 1.1 trillion) entries, and memory is exhausted long before that, at roughly
 280 MB retained per million entries plus comparable transient use during construction.
 
-Construction has no limit of its own on the number of entries. `new/2` will attempt
+Construction has no limit of its own on the number of entries. `new/1` will attempt
 whatever list it is handed, so tree construction belongs behind input you control.
 Construction also raises rather than returning errors: `ArgumentError` for input that is
-not a list of entry maps, an invalid key, an invalid hash, a duplicate key, an invalid
-option, or a depth over the cap.
+not a list of entry maps, an invalid key, an invalid hash, a duplicate key, or a depth
+over the cap.
 
 ## Constant-time comparison
 
