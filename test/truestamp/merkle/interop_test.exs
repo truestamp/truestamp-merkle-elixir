@@ -97,6 +97,7 @@ defmodule Truestamp.Merkle.InteropTest do
       name = Path.basename(file)
       assert [_ | _] = fixture["trees"], name
       assert [_ | _] = fixture["inclusion"], name
+      assert [_ | _] = fixture["hash_checks"], name
       assert Enum.any?(fixture["inclusion"], &expected/1), name
       assert Enum.any?(fixture["inclusion"], &(not expected(&1))), name
     end
@@ -114,7 +115,7 @@ defmodule Truestamp.Merkle.InteropTest do
     @fixture_file file
 
     describe Path.basename(file, ".json") do
-      test "the empty root and the node and 32-byte leaf hash checks" do
+      test "the empty root and every node and leaf hash check" do
         fixture = load(@fixture_file)
 
         if fixture["empty_root"],

@@ -27,7 +27,7 @@ jobs:
             erlang: 28.5.0.7
             elixir: 1.20.1-otp-28
           - otp: "27"
-            erlang: 27.3.4.9
+            erlang: 27.3.4.18
             elixir: 1.20.1-otp-27
 
     env:
@@ -49,7 +49,7 @@ jobs:
         # the interop programs in interop/go/.
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
-          cache_key_prefix: mise-otp${{ matrix.otp }}
+          cache_key_prefix: mise-otp${{ matrix.otp }}-${{ matrix.erlang }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
@@ -65,9 +65,9 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-otp${{ matrix.otp }}-mix-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          key: ${{ runner.os }}-otp${{ matrix.otp }}-${{ matrix.erlang }}-${{ matrix.elixir }}-mix-${{ hashFiles('.tool-versions', 'mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-otp${{ matrix.otp }}-mix-
+            ${{ runner.os }}-otp${{ matrix.otp }}-${{ matrix.erlang }}-${{ matrix.elixir }}-mix-
 
       - name: Fetch deps
         run: |
@@ -87,7 +87,8 @@ jobs:
 
       - name: The gate (task ci)
         # The same gates as `task precommit`, with formatting checked rather than
-        # rewritten: strict compile, credo, vectors/merkle.json current, no unused deps,
+        # rewritten: strict compile, credo, dialyzer (its PLTs are in the cached _build),
+        # vectors/merkle.json current, no unused deps,
         # and the test suite with the Go interop programs (--include go_interop), which
         # rebuild every vectors/interop/ file and check vectors/merkle.json with each Go
         # implementation.

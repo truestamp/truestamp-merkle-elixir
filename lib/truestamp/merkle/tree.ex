@@ -9,7 +9,6 @@ defmodule Truestamp.Merkle.Tree do
   # odd number of nodes carries its last node up unchanged, which builds exactly the tree
   # the RFC's recursive split at the largest power of two defines.
 
-  alias Truestamp.Merkle
   alias Truestamp.Merkle.{Hash, Input}
 
   # A ceiling that turns an impossible input into a clear error. Not a resource limit:
@@ -17,11 +16,21 @@ defmodule Truestamp.Merkle.Tree do
   # long before that.
   @max_depth 40
 
+  @typedoc "A tree's fields, which `Truestamp.Merkle.new/1` puts in its opaque struct."
+  @type fields :: %{
+          root_hash: <<_::256>>,
+          leaves: [{String.t(), String.t()}],
+          tree_depth: non_neg_integer(),
+          tree_levels: [tuple(), ...],
+          leaf_index: %{String.t() => non_neg_integer()}
+        }
+
   @doc """
-  Builds a tree from a list of entries. `Truestamp.Merkle.new/1` documents the entry rules
-  and what raises.
+  Builds a tree's fields from a list of entries. `Truestamp.Merkle.new/1` documents the
+  entry rules and what raises, and makes the struct: the tree type is opaque outside that
+  module.
   """
-  @spec new(term()) :: Merkle.t()
+  @spec new(term()) :: fields()
   def new([]), do: empty()
 
   def new(entries) when is_list(entries) do
@@ -50,7 +59,7 @@ defmodule Truestamp.Merkle.Tree do
 
   defp empty do
     [{root}] = levels = levels([])
-    %Merkle{root_hash: root, leaves: [], tree_depth: 0, tree_levels: levels, leaf_index: %{}}
+    %{root_hash: root, leaves: [], tree_depth: 0, tree_levels: levels, leaf_index: %{}}
   end
 
   # `pairs` are the entries in leaf order as {key, digest_hex}, and `leaf_hashes` their
@@ -60,7 +69,7 @@ defmodule Truestamp.Merkle.Tree do
     depth = depth!(length(leaf_hashes))
     levels = levels(leaf_hashes)
 
-    %Merkle{
+    %{
       root_hash: levels |> List.last() |> elem(0),
       leaves: pairs,
       tree_depth: depth,

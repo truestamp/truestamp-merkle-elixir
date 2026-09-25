@@ -21,7 +21,7 @@ defmodule Truestamp.Merkle do
   key first, so the same set of entries always gives the same root, whatever order they
   arrive in. The README states the contract a port must reproduce,
   `vectors/merkle.json` holds its known answers, and
-  [`vectors/interop/`](https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop) holds the known
+  [`vectors/interop/`][interop] holds the known
   answers of six Go implementations and of production logs, which the tests also hold the
   library to.
 
@@ -31,15 +31,15 @@ defmodule Truestamp.Merkle do
   path of the wrong length is refused. Any RFC 6962 or RFC 9162 verifier accepts these
   proofs.
 
-  **Take the tree size from where you take the root, not from the proof.** A root
-  commits to its tree's size, but a verifier cannot read the size out of it, and the
-  RFC 9162 walk never checks it: the size only decides which side each path node goes
-  on. In trees of 1 to 300 entries, 43,730 of the 45,150 proofs (97%) still reach their
-  root with `tree_size` raised by one, though no tree of that size has that root, and the
-  index can move with the size: the last of three entries also verifies as index 1 of a
-  two-entry tree. Given the true size, no other index verifies unless another entry has
-  the same digest. Certificate Transparency gets the size from the signed tree head,
-  beside the root; do the same with `size/1`, and check that a proof's `tree_size`
+  **Take the tree size from where you take the root, not from the proof.** A root commits
+  to its tree's size, but a verifier cannot read the size out of it, and the RFC 9162 walk
+  never checks it against the root: the size decides the path's length and which side each
+  node goes on. In trees of 1 to 300 entries, 43,730 of the 45,150 proofs (97%) still
+  reach their root with `tree_size` raised by one, though no tree of that size has that
+  root, and the index can move with the size: the last of three entries also verifies as
+  index 1 of a two-entry tree. Given the true size, no other index verifies unless another
+  entry has the same digest. Certificate Transparency gets the size from the signed tree
+  head, beside the root; do the same with `size/1`, and check that a proof's `tree_size`
   equals it. A proof checked without that still shows the digest is in the tree, but not
   where.
 
@@ -56,13 +56,13 @@ defmodule Truestamp.Merkle do
   - **One encoding per proof**: the binary form has fixed-width fields and a path length
     the index and size determine.
 
-  What a proof does and does not attest is in [SECURITY.md](SECURITY.md). Keys are not bound into a
-  proof: bind an identifier into the digest itself if you need that.
+  What a proof does and does not attest is in [SECURITY.md](SECURITY.md). Keys are not
+  bound into a proof: bind an identifier into the digest itself if you need that.
 
   Size a large workload by memory before time: a finished tree holds a few hundred bytes
   of heap per entry, and building one needs more while the input and the tree are both
   alive. The README's Performance section has measured figures, and
-  [`bench/performance.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs) reproduces them on your hardware.
+  [`bench/performance.exs`][bench] reproduces them on your hardware.
 
   ## Quick Start
 
@@ -98,6 +98,9 @@ defmodule Truestamp.Merkle do
     errors (or `false`) for anything they are given, and raise only for invalid options.
   - `proof_to_binary/1` raises `ArgumentError` for a proof that is not well formed; it is
     for proofs you produced.
+
+  [interop]: https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop
+  [bench]: https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs
   """
 
   # The public API. Each function delegates to the internal module that owns it:
@@ -170,7 +173,7 @@ defmodule Truestamp.Merkle do
 
   """
   @spec new([%{binary() => binary()}]) :: t()
-  defdelegate new(entries), to: Tree
+  def new(entries), do: struct!(__MODULE__, Tree.new(entries))
 
   @doc """
   Returns the root as 64 lowercase hex characters.

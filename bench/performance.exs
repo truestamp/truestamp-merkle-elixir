@@ -127,7 +127,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
 
     [
       format_int(n),
-      Integer.to_string(tree.tree_depth),
+      Integer.to_string(depth(tree, entries)),
       format_ms(build_us),
       format_int(round(n / (build_us / 1_000_000))) <> "/s",
       tree_memory(tree, n),
@@ -147,6 +147,9 @@ defmodule Truestamp.Merkle.PerformanceBench do
       }
     end
   end
+
+  # The first entry's path is the longest in the tree, one node per level.
+  defp depth(tree, [%{"key" => first} | _]), do: length(Merkle.proof(tree, first).path)
 
   defp time_build(entries) do
     {us, _tree} = :timer.tc(fn -> Merkle.new(entries) end)

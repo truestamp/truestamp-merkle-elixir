@@ -134,9 +134,9 @@ inconvenient.
 None of this is homegrown. The tree shape, the audit path and the verification loop are
 RFC 9162 section 2.1's, so any implementation of that RFC or of RFC 6962 reproduces the
 roots and accepts the proofs; the tests hold the library to the published known answers of
-six Go implementations and to proofs from production logs ([`vectors/interop/`](https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop)). The only
-thing this library adds is the order: entries are sorted by key before the digests become
-the RFC's leaf data.
+six Go implementations and to proofs from production logs ([`vectors/interop/`][interop]).
+The only thing this library adds is the order: entries are sorted by key before the
+digests become the RFC's leaf data.
 
 ## Canonical hex
 
@@ -227,5 +227,9 @@ a defense, and it should not appear in a security summary as though it were one.
 
 ## Platform requirements
 
-Elixir 1.20, and so OTP 27 or newer. CI runs every gate on OTP 27, 28 and 29. Beyond that
-the module depends only on `:crypto`, `Base`, `Bitwise`, and the standard library.
+Elixir 1.20, and so OTP 27 or newer. CI runs every gate on OTP 27, 28 and 29, with Elixir
+1.20. The code may well run on earlier Elixir releases, but 1.20 is what CI tests, so it
+is what `mix.exs` requires. Beyond that the module depends only on `:crypto`, `Base`,
+`Bitwise`, and the standard library.
+
+[interop]: https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop

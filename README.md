@@ -24,8 +24,8 @@ root = Truestamp.Merkle.root(tree)
 proof = Truestamp.Merkle.proof(tree, "a")
 # %{leaf_index: 0, tree_size: 2, path: ["<64 hex characters>"]}
 
-{:ok, ^root} = Truestamp.Merkle.walk(digest_a, proof)
-true = Truestamp.Merkle.verify(digest_a, proof, root, max_steps: 32)
+{:ok, ^root} = Truestamp.Merkle.walk(digest_a, proof) true =
+Truestamp.Merkle.verify(digest_a, proof, root, max_steps: 32)
 
 binary = Truestamp.Merkle.proof_to_binary(proof)
 {:ok, ^proof} = Truestamp.Merkle.proof_from_binary(binary)
@@ -37,8 +37,8 @@ Until it is on Hex, depend on it by commit:
 {:truestamp_merkle, github: "truestamp/truestamp-merkle-elixir", ref: "<full commit id>"}
 ```
 
-The module documentation covers every function, and [SECURITY.md](SECURITY.md) what a proof does and
-does not attest.
+The module documentation covers every function, and [SECURITY.md](SECURITY.md) what a
+proof does and does not attest.
 
 ## The tree contract
 
@@ -175,11 +175,12 @@ lowercase hex throughout. The file's sections:
 - `binary_refusals`: binary forms the decoder must refuse, as `binary_hex`, with the
   `error` it names.
 
-Two things a port gets wrong easily. Some integers in the file reach 2^64, past what a
-double holds exactly, so read it with a JSON parser that keeps 64-bit integers exact; each
-accepted proof's `binary_hex` is also an exact form. And check every character of a hex
-value before decoding it: common decoders skip whitespace or stop at the first bad pair,
-and the refusals include 64-character values that only such a check rejects.
+Two things a port gets wrong easily. Some integers in the file are above 2^53, past which
+a double cannot hold every integer, so read it with a JSON parser that keeps 64-bit
+integers exact; each accepted proof's `binary_hex` is also an exact form. And check every
+character of a hex value before decoding it: common decoders skip whitespace or stop at
+the first bad pair, and the refusals include 64-character values that only such a check
+rejects.
 
 The values below are a summary of that file.
 
@@ -223,18 +224,16 @@ the tessera and serverless-log test log, and ics23's test vectors. That is 330 t
 reject, and cases computed with each implementation's own functions from its tests' data
 (named `generated:` in the files). The tests hold this library to every root and verdict in
 them, at the leaf-hash level, and to the RFC 9162 verdict where an implementation departs
-from it. [`vectors/interop/README.md`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/vectors/interop/README.md) lists every source, and
+from it. [`vectors/interop/README.md`][interop] lists every source, and
 `mix test --include go_interop` also runs each implementation over the files and over this
 library's own vectors.
 
 ## Performance
 
-Measured with
-[`bench/performance.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs)
-(`task bench`, in the `prod` environment; `task bench -- --markdown` prints this table) on
-an Apple M3 Max with 64 GB, running Elixir 1.20.1 on OTP 29. A tree is built by one
-process; the build time is the median of three builds, and the proof and verify times are
-means over up to 10,000 random entries.
+Measured with [`bench/performance.exs`][bench] (`task bench`, in the `prod` environment;
+`task bench -- --markdown` prints this table) on an Apple M3 Max with 64 GB, running
+Elixir 1.20.1 on OTP 29. A tree is built by one process; the build time is the median of
+three builds, and the proof and verify times are means over up to 10,000 random entries.
 
 | Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |
 |---:|---:|---:|---:|---:|---:|---:|---:|
@@ -256,7 +255,7 @@ means over up to 10,000 random entries.
   size a large workload by memory before time.
 - Timings vary between runs by a few percent, and by more on a busy machine.
 
-[`bench/proof_generation_benchmark.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/proof_generation_benchmark.exs) times proof generation in bulk.
+[`bench/proof_generation_benchmark.exs`][bulk] times proof generation in bulk.
 
 ## Development
 
@@ -267,8 +266,8 @@ means over up to 10,000 random entries.
     task setup       fetch the Hex packages and the Go interop programs' modules
     task test        run the test suite; it needs no Go
     task test-go     run the suite and the Go interop programs
-    task precommit   format, then every gate CI runs: strict compile, credo, vectors,
-                     unused deps, and the tests with the Go interop programs
+    task precommit   format, then every gate CI runs: strict compile, credo, dialyzer,
+                     vectors, unused deps, and the tests with the Go interop programs
     task example     run examples/usage.exs, the API from end to end
     task bench       measure the performance table
 
@@ -280,3 +279,7 @@ instead of rewritten, on OTP 27, 28 and 29.
 Apache License 2.0. See [LICENSE](LICENSE).
 
 Copyright (c) 2025-2026 Truestamp, Inc.
+
+[interop]: https://github.com/truestamp/truestamp-merkle-elixir/blob/main/vectors/interop/README.md
+[bench]: https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs
+[bulk]: https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/proof_generation_benchmark.exs

@@ -163,7 +163,7 @@ defmodule MerkleVectors do
   # that share a digest.
   defp mixed_entries do
     keys =
-      ["b", "a_", "B", "A", "_x", "a.", "-x", ".x", "a", "a-", "a0", "10", "9"] ++
+      ["b", "a_", "B", "A", "_x", "a.", "-x", ".x", "a-", "a", "a0", "10", "9"] ++
         [String.duplicate("k", 36)]
 
     for {key, i} <- Enum.with_index(keys, 1) do
@@ -267,6 +267,14 @@ defmodule MerkleVectors do
        {"uppercase digest", String.upcase(d), good, 64, "invalid_leaf"},
        {"digest with a trailing newline", d <> "\n", good, 64, "invalid_leaf"},
        {"63-character digest", binary_part(d, 0, 63), good, 64, "invalid_leaf"},
+       {"empty digest", "", good, 64, "invalid_leaf"},
+       {"62-character digest", binary_part(d, 0, 62), good, 64, "invalid_leaf"},
+       {"66-character digest", d <> "ab", good, 64, "invalid_leaf"},
+       {"128-character digest", d <> d, good, 64, "invalid_leaf"},
+       {"empty node", d, raw(0, 3, [s1, ""]), 64, "invalid_node"},
+       {"62-character node", d, raw(0, 3, [s1, binary_part(s2, 0, 62)]), 64, "invalid_node"},
+       {"66-character node", d, raw(0, 3, [s1, s2 <> "ab"]), 64, "invalid_node"},
+       {"128-character node", d, raw(0, 3, [s1, s2 <> s2]), 64, "invalid_node"},
        {"leaf_index below 0", d, raw(-1, 3, [s1, s2]), 64, "invalid_proof"},
        {"tree_size 0", d, raw(0, 0, []), 64, "invalid_proof"},
        {"tree_size past 2^64 - 1", d, raw(0, 18_446_744_073_709_551_616, []), 64,
@@ -368,7 +376,11 @@ defmodule MerkleVectors do
        {"the same key twice, different digests", [e.("a", good), e.("a", other)]},
        {"uppercase digest", [e.("a", String.upcase(good))]},
        {"63-character digest", [e.("a", binary_part(good, 0, 63))]},
-       {"65-character digest", [e.("a", good <> "0")]}
+       {"65-character digest", [e.("a", good <> "0")]},
+       {"empty digest", [e.("a", "")]},
+       {"62-character digest", [e.("a", binary_part(good, 0, 62))]},
+       {"66-character digest", [e.("a", good <> "ab")]},
+       {"128-character digest", [e.("a", good <> good)]}
      ] ++
        for(
          {label, tail} <- non_hex_tails(),

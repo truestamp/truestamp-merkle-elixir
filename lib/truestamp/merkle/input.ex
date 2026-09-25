@@ -33,9 +33,22 @@ defmodule Truestamp.Merkle.Input do
           "Invalid input entry format. Expected map with \"key\" and \"hash\" keys, got: #{inspect(invalid, limit: 10)}"
   end
 
+  # The common case in one pass: 1 to 36 bytes, every one an allowed character. Anything
+  # else takes explain_key!/1, which names the rule it breaks.
+  defp validate_key!(key) when is_binary(key) and byte_size(key) in 1..@max_key_length do
+    if key_chars?(key), do: :ok, else: explain_key!(key)
+  end
+
+  defp validate_key!(key) when is_binary(key), do: explain_key!(key)
+
+  defp validate_key!(invalid) do
+    raise ArgumentError, "Invalid key type. Expected string, got: #{inspect(invalid, limit: 10)}"
+  end
+
   # Bytes before characters: every valid key is ASCII, so its byte count is its character
-  # count, and an oversized key is refused without walking its graphemes.
-  defp validate_key!(key) when is_binary(key) do
+  # count, and an oversized key is refused without walking its graphemes. Every key that
+  # reaches here breaks a rule, so one of the three raises.
+  defp explain_key!(key) do
     if byte_size(key) > @max_key_length do
       raise ArgumentError,
             "Invalid key length. Expected at most #{@max_key_length} ASCII characters, got #{byte_size(key)} bytes"
@@ -50,10 +63,6 @@ defmodule Truestamp.Merkle.Input do
       raise ArgumentError,
             "Invalid key format. Expected alphanumeric characters with optional .-_ separators, got: #{inspect(key, limit: 10)}"
     end
-  end
-
-  defp validate_key!(invalid) do
-    raise ArgumentError, "Invalid key type. Expected string, got: #{inspect(invalid, limit: 10)}"
   end
 
   defp parse_digest!(digest) when is_binary(digest) do

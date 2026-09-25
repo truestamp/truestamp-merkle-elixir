@@ -63,7 +63,9 @@ defmodule Truestamp.Merkle.Hash do
   # Matching the 64-byte head first is what makes this exact: a trailing newline or any
   # other extra byte fails the match. (A regex ending in `$` would accept a hash followed
   # by one newline, because that is what `$` means in PCRE.) Base.decode16/2 with
-  # case: :lower then refuses uppercase and every byte outside 0-9 and a-f.
+  # case: :lower then refuses uppercase and every byte outside 0-9 and a-f. Refusing a
+  # bad value costs one exception that Base raises and rescues inside decode16/2: bounded,
+  # and cheaper than a walk of a valid proof.
   def parse_digest(<<hex::binary-size(@digest_hex_chars)>>), do: Base.decode16(hex, case: :lower)
   def parse_digest(_not_64_bytes), do: :error
 end

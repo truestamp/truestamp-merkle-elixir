@@ -129,6 +129,18 @@ defmodule Truestamp.Merkle.TreeTest do
     end
   end
 
+  describe "root/1, size/1 and proof/2" do
+    test "raise for anything but a tree built by new/1" do
+      lookalike = %{root_hash: <<0::256>>, leaf_index: %{}, tree_levels: [{<<0::256>>}]}
+
+      for bad <- [lookalike, nil] do
+        assert_raise FunctionClauseError, fn -> Merkle.root(bad) end
+        assert_raise FunctionClauseError, fn -> Merkle.size(bad) end
+        assert_raise FunctionClauseError, fn -> Merkle.proof(bad, "k") end
+      end
+    end
+  end
+
   describe "size/1" do
     test "is the entry count, every proof's tree_size, and 0 for the empty tree" do
       for n <- [0, 1, 2, 3, 7, 8, 9, 300] do
@@ -176,7 +188,11 @@ defmodule Truestamp.Merkle.TreeTest do
             @digest <> "\n",
             binary_part(@digest, 0, 63),
             @digest <> "0",
-            "zz" <> binary_part(@digest, 2, 62)
+            "zz" <> binary_part(@digest, 2, 62),
+            "",
+            binary_part(@digest, 0, 62),
+            @digest <> "ab",
+            @digest <> @digest
           ] do
         assert_raise ArgumentError, ~r/Invalid hash format/, fn ->
           Merkle.new([entry("a", bad)])

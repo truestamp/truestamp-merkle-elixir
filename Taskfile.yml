@@ -71,6 +71,13 @@ tasks:
     cmds:
       - mix credo --strict
 
+  dialyzer:
+    desc: Run dialyzer (its PLTs live under _build/plts)
+    env:
+      MIX_ENV: test
+    cmds:
+      - mix dialyzer
+
   test:
     desc: Run the test suite (no Go needed; reads the committed interop files)
     cmds:
@@ -126,7 +133,7 @@ tasks:
   # ===========================================================================
 
   precommit:
-    desc: "Format, then every gate CI runs: compile, credo, vectors, unused deps, tests with the Go programs"
+    desc: "Format, then every gate CI runs: compile, credo, dialyzer, vectors, unused deps, tests with the Go programs"
     cmds:
       - task: format
       - task: gates
@@ -142,6 +149,7 @@ tasks:
     cmds:
       - task: compile
       - task: credo
+      - task: dialyzer
       - task: vectors-check
       - mix deps.unlock --check-unused
       - task: test-go

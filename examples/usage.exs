@@ -32,10 +32,10 @@ proof = Merkle.proof(tree, "invoice-2026-002")
 IO.puts("proof: #{inspect(proof)}")
 
 # 4. Verify it. Anyone holding the document, the proof and a root they trust can do this.
-#    Take the tree size from the same place as the root (here, the count published with
-#    it): the root does not fix the size, so a size read only from the proof proves
-#    that the digest is in the tree, but not where.
-published = %{root: root, tree_size: 3}
+#    Publish size/1 beside the root and check the proof's tree_size against it: the
+#    root commits to the size, but the walk never checks it, so a size read only from
+#    the proof shows the digest is in the tree, but not where.
+published = %{root: root, tree_size: Merkle.size(tree)}
 invoice = documents["invoice-2026-002"]
 
 true = proof.tree_size == published.tree_size

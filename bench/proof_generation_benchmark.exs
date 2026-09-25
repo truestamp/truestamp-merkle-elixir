@@ -40,7 +40,9 @@ defmodule ProofGenerationBenchmark do
     tree_ms = tree_time / 1000
 
     IO.puts("  Tree created in #{format_time(tree_ms)}")
-    IO.puts("  Tree depth: #{tree.tree_depth}")
+    # The first entry in key order has the longest path, one node per level.
+    first = data |> Enum.map(& &1["key"]) |> Enum.min()
+    IO.puts("  Tree depth: #{length(Merkle.proof(tree, first).path)}")
 
     # Test proof generation performance with varying numbers of proofs
     proof_counts = [10, 100, 1000]

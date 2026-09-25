@@ -32,6 +32,9 @@ defmodule Truestamp.Merkle.PathTest do
     end
   end
 
+  # Lowercase hex of an even length other than 64, which a decoder alone would accept.
+  defp wrong_length(hex), do: ["", binary_part(hex, 0, 62), hex <> "ab", hex <> hex]
+
   describe "proof/2" do
     test "every proof in trees of 1 to 130 entries is the RFC's audit path" do
       for n <- 1..130 do
@@ -176,7 +179,7 @@ defmodule Truestamp.Merkle.PathTest do
               String.duplicate("a", 64) <> "\n",
               nil,
               7
-            ] ++ non_hex(String.duplicate("a", 64)) do
+            ] ++ non_hex(String.duplicate("a", 64)) ++ wrong_length(String.duplicate("a", 64)) do
         assert Merkle.walk(bad, proof) == {:error, :invalid_leaf}, inspect(bad)
       end
     end
@@ -271,7 +274,7 @@ defmodule Truestamp.Merkle.PathTest do
               :atom,
               7,
               nil
-            ] ++ non_hex(first) do
+            ] ++ non_hex(first) ++ wrong_length(first) do
         assert Merkle.walk(digest, %{proof | path: [bad]}) == {:error, :invalid_node},
                inspect(bad)
       end
@@ -314,7 +317,8 @@ defmodule Truestamp.Merkle.PathTest do
       %{digest: digest, proof: proof, root: root} = ctx
 
       for bad <-
-            [String.upcase(root), root <> "\n", binary_part(root, 0, 63), nil] ++ non_hex(root) do
+            [String.upcase(root), root <> "\n", binary_part(root, 0, 63), nil] ++
+              non_hex(root) ++ wrong_length(root) do
         refute Merkle.verify(digest, proof, bad), inspect(bad)
       end
     end
@@ -392,7 +396,14 @@ defmodule Truestamp.Merkle.PathTest do
     test ":max_steps is an integer from 0 to 64, and nothing else is accepted", ctx do
       %{digest: digest, proof: proof, root: root} = ctx
 
-      for bad <- [[max_steps: 65], [max_steps: -1], [max_steps: nil], [max_steps: "32"], [cap: 1]] do
+      for bad <- [
+            [max_steps: 65],
+            [max_steps: -1],
+            [max_steps: nil],
+            [max_steps: "32"],
+            [max_steps: 32.0],
+            [cap: 1]
+          ] do
         assert_raise ArgumentError, fn -> Merkle.walk(digest, proof, bad) end
         assert_raise ArgumentError, fn -> Merkle.verify(digest, proof, root, bad) end
       end

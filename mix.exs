@@ -11,6 +11,7 @@ defmodule Truestamp.Merkle.MixProject do
     [
       app: :truestamp_merkle,
       version: @version,
+      # The Elixir CI tests (on OTP 27, 28 and 29); see SECURITY.md, Platform requirements.
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -18,6 +19,8 @@ defmodule Truestamp.Merkle.MixProject do
       description: "Deterministic SHA-256 Merkle trees with inclusion proofs, in pure Elixir.",
       package: package(),
       docs: docs(),
+      # The PLTs live under _build, which CI caches.
+      dialyzer: [plt_core_path: "_build/plts", plt_local_path: "_build/plts"],
       source_url: @source_url
     ]
   end
@@ -32,6 +35,7 @@ defmodule Truestamp.Merkle.MixProject do
   defp deps do
     [
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:stream_data, "~> 1.0", only: :test}
     ]
