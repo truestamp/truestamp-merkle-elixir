@@ -373,7 +373,7 @@ defmodule Truestamp.Merkle.PathTest do
         assert_raise ArgumentError, fn -> Merkle.verify(digest, proof, root, bad) end
       end
 
-      for bad <- [%{max_steps: 3}, nil, "opts"] do
+      for bad <- [%{max_steps: 3}, nil, "opts", [{:max_steps, 3} | :tail]] do
         assert_raise ArgumentError, ~r/options must be a keyword list/, fn ->
           Merkle.walk(digest, proof, bad)
         end

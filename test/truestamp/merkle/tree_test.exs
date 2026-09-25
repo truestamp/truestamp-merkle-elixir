@@ -119,6 +119,13 @@ defmodule Truestamp.Merkle.TreeTest do
         Merkle.new([entry(String.duplicate("k", 37))])
       end
 
+      # One grapheme of a million bytes is refused by its size, without walking it.
+      huge = "a" <> String.duplicate("\u0301", 500_000)
+      {:reductions, before} = Process.info(self(), :reductions)
+      assert_raise ArgumentError, ~r/Invalid key length/, fn -> Merkle.new([entry(huge)]) end
+      {:reductions, later} = Process.info(self(), :reductions)
+      assert later - before < 100_000
+
       for bad <- ["", "a b", "a/b", "é", "a\n"] do
         assert_raise ArgumentError, ~r/Invalid key format/, fn -> Merkle.new([entry(bad)]) end
       end
@@ -182,6 +189,9 @@ defmodule Truestamp.Merkle.TreeTest do
       for bad <- [%{}, "entries", nil, [entry("a") | :tail]] do
         assert_raise ArgumentError, ~r/Invalid input data/, fn -> Merkle.new(bad) end
       end
+
+      # The message shows the input, improper tail included.
+      assert_raise ArgumentError, ~r/\| :tail\]/, fn -> Merkle.new([entry("a") | :tail]) end
 
       for bad <- [
             [:not_a_map],

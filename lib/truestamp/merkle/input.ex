@@ -32,10 +32,12 @@ defmodule Truestamp.Merkle.Input do
           "Invalid input entry format. Expected map with \"key\" and \"hash\" keys, got: #{inspect(invalid, limit: 10)}"
   end
 
+  # Bytes before characters: every valid key is ASCII, so its byte count is its character
+  # count, and an oversized key is refused without walking its graphemes.
   defp validate_key!(key) when is_binary(key) do
-    if String.length(key) > @max_key_length do
+    if byte_size(key) > @max_key_length do
       raise ArgumentError,
-            "Invalid key length. Expected maximum #{@max_key_length} characters, got: #{String.length(key)}"
+            "Invalid key length. Expected at most #{@max_key_length} ASCII characters, got #{byte_size(key)} bytes"
     end
 
     if String.trim(key) != key do

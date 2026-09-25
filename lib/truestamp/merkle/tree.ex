@@ -25,7 +25,7 @@ defmodule Truestamp.Merkle.Tree do
   def new([]), do: empty()
 
   def new(entries) when is_list(entries) do
-    if List.improper?(entries), do: new(:not_a_list)
+    if List.improper?(entries), do: raise_not_entries!(entries)
     Input.validate_entries!(entries)
 
     pairs =
@@ -42,7 +42,9 @@ defmodule Truestamp.Merkle.Tree do
     assemble(pairs, Enum.map(pairs, fn {_key, digest} -> Hash.leaf(digest) end), index)
   end
 
-  def new(entries) do
+  def new(entries), do: raise_not_entries!(entries)
+
+  defp raise_not_entries!(entries) do
     raise ArgumentError,
           "Invalid input data. Expected a list of maps with \"key\" and \"hash\" keys, got: #{inspect(entries, limit: 10)}"
   end

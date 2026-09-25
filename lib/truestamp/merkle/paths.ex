@@ -219,11 +219,11 @@ defmodule Truestamp.Merkle.Paths do
     end
   end
 
-  defp max_steps!(opts) when not is_list(opts) do
-    raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
-  end
-
   defp max_steps!(opts) do
+    if not is_list(opts) or List.improper?(opts) do
+      raise ArgumentError, "options must be a keyword list, got: #{inspect(opts)}"
+    end
+
     case Keyword.validate!(opts, max_steps: @max_steps)[:max_steps] do
       steps when is_integer(steps) and steps >= 0 and steps <= @max_steps ->
         steps
