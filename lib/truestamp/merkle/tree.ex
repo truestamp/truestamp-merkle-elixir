@@ -26,12 +26,11 @@ defmodule Truestamp.Merkle.Tree do
 
   def new(entries) when is_list(entries) do
     if List.improper?(entries), do: raise_not_entries!(entries)
-    Input.validate_entries!(entries)
 
-    pairs =
-      entries
-      |> Enum.map(fn %{"key" => key, "hash" => digest} -> {key, digest} end)
-      |> Enum.sort_by(&elem(&1, 0))
+    # Keys are unique once the duplicate check below passes, so sorting the tuples orders
+    # them by key alone; a repeated key raises whatever order its entries take.
+    triples = entries |> Input.parse_entries!() |> Enum.sort()
+    pairs = Enum.map(triples, fn {key, digest, _bytes} -> {key, digest} end)
 
     # The index keys on the entry's key, so a key that repeats collapses two entries
     # into one. Comparing sizes catches that without a second pass; only the failing
@@ -39,7 +38,7 @@ defmodule Truestamp.Merkle.Tree do
     index = leaf_index(pairs)
     if map_size(index) != length(pairs), do: raise_duplicate_key!(pairs)
 
-    assemble(pairs, Enum.map(pairs, fn {_key, digest} -> Hash.leaf(digest) end), index)
+    assemble(pairs, Enum.map(triples, fn {_key, _digest, bytes} -> Hash.leaf(bytes) end), index)
   end
 
   def new(entries), do: raise_not_entries!(entries)

@@ -147,11 +147,12 @@ exactly like a proof that does not check out; `walk/3` names the refusal instead
 tools commonly emit uppercase, so downcase before calling rather than reading that `false`
 as a cryptographic result.
 
-The validators walk the bytes rather than matching a regular expression. That is faster,
-and it closes a real hole: PCRE's `$` matches before a trailing newline, so a 64-hex hash
-with a `\n` appended would pass such a pattern and then raise out of `Base.decode16!/2`
-deep inside verification, in a function documented never to raise. Matching a fixed
-64-byte head cannot do that.
+The validators match a fixed 64-byte head and then decode it with `Base.decode16/2` in
+lowercase mode, rather than matching a regular expression. That closes a real hole: PCRE's
+`$` matches before a trailing newline, so a 64-hex hash with a `\n` appended would pass such
+a pattern and then raise out of a decode deep inside verification, in a function documented
+never to raise. A 65-byte value cannot match a 64-byte head, and the decode checks every
+character and decodes in the same pass.
 
 ## What an observer can infer from a proof
 

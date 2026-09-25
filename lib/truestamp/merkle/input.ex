@@ -12,22 +12,23 @@ defmodule Truestamp.Merkle.Input do
   @max_key_length 36
 
   @doc """
-  Checks every entry of a list against the entry rules and returns `:ok`, or raises
-  `ArgumentError` naming the first entry that breaks one.
+  Checks every entry of a list against the entry rules, in order, and returns each as
+  `{key, digest_hex, digest_bytes}`, so the digest is decoded once, by the check that
+  validates it. Raises `ArgumentError` naming the first entry that breaks a rule.
 
   An entry is a map with a `"key"` of 1 to 36 characters, each an ASCII letter, a digit,
   `.`, `_` or `-`, and a `"hash"` of exactly 64 lowercase hex characters. Whether keys
   repeat is checked where the tree is built, not here.
   """
-  @spec validate_entries!([term()]) :: :ok
-  def validate_entries!(entries), do: Enum.each(entries, &validate_entry!/1)
+  @spec parse_entries!([term()]) :: [{String.t(), String.t(), <<_::256>>}]
+  def parse_entries!(entries), do: Enum.map(entries, &parse_entry!/1)
 
-  defp validate_entry!(%{"key" => key, "hash" => digest}) do
+  defp parse_entry!(%{"key" => key, "hash" => digest}) do
     validate_key!(key)
-    validate_digest!(digest)
+    {key, digest, parse_digest!(digest)}
   end
 
-  defp validate_entry!(invalid) do
+  defp parse_entry!(invalid) do
     raise ArgumentError,
           "Invalid input entry format. Expected map with \"key\" and \"hash\" keys, got: #{inspect(invalid, limit: 10)}"
   end
@@ -55,14 +56,18 @@ defmodule Truestamp.Merkle.Input do
     raise ArgumentError, "Invalid key type. Expected string, got: #{inspect(invalid, limit: 10)}"
   end
 
-  defp validate_digest!(digest) when is_binary(digest) do
-    unless Hash.digest_hex?(digest) do
-      raise ArgumentError,
-            "Invalid hash format. Expected #{Hash.digest_hex_chars()}-character lowercase hex SHA-256 hash (#{Hash.digest_bytes()} bytes), got: #{inspect(digest, limit: 10)}"
+  defp parse_digest!(digest) when is_binary(digest) do
+    case Hash.parse_digest(digest) do
+      {:ok, bytes} ->
+        bytes
+
+      :error ->
+        raise ArgumentError,
+              "Invalid hash format. Expected #{Hash.digest_hex_chars()}-character lowercase hex SHA-256 hash (#{Hash.digest_bytes()} bytes), got: #{inspect(digest, limit: 10)}"
     end
   end
 
-  defp validate_digest!(invalid) do
+  defp parse_digest!(invalid) do
     raise ArgumentError, "Invalid hash type. Expected string, got: #{inspect(invalid, limit: 10)}"
   end
 

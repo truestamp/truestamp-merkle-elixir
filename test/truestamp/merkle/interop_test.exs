@@ -117,7 +117,7 @@ defmodule Truestamp.Merkle.InteropTest do
             # The library hashes 32-byte digests only; other leaf data is checked through
             # the trees and proofs built on its leaf hashes.
             %{"kind" => "leaf", "input_hex" => <<input::binary-size(64)>>, "hash" => hash} ->
-              assert Hash.to_hex(Hash.leaf(input)) == hash, check["name"]
+              assert Hash.to_hex(Hash.leaf(unhex(input))) == hash, check["name"]
 
             %{"kind" => "leaf"} ->
               :ok

@@ -225,19 +225,18 @@ random entries.
 
 | Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 1,000 | 10 | 1.4 ms | 698,812/s | 271.5 KB | 1.5 us | 9.3 us | 336 B |
-| 10,000 | 14 | 14.4 ms | 692,569/s | 2.7 MB | 1.8 us | 12.0 us | 464 B |
-| 100,000 | 17 | 232.3 ms | 430,424/s | 26.5 MB | 3.6 us | 20.4 us | 560 B |
+| 1,000 | 10 | 1.1 ms | 898,473/s | 271.5 KB | 1.4 us | 6.3 us | 336 B |
+| 10,000 | 14 | 13.8 ms | 722,178/s | 2.7 MB | 1.7 us | 9.3 us | 464 B |
+| 100,000 | 17 | 246.7 ms | 405,301/s | 26.5 MB | 3.4 us | 10.3 us | 560 B |
 
-- **Build rate** holds near 700,000 entries a second to 10,000 entries and falls to about
-  430,000 at 100,000.
+- **Build rate** falls as the tree grows, from about 900,000 entries a second at 1,000
+  entries to about 400,000 at 100,000.
 - **Proofs** hold at most one node per level, so their time and size grow with the depth,
   the base-2 logarithm of the entry count rounded up. Proof size is the binary form of the
   longest proof among the sampled entries: 16 bytes for the index and size, and 32 bytes
   per node.
 - **Verification** checks the format of every value it is given and hashes once per node,
-  so it costs more than producing a proof. At 100,000 entries it measured between 15 and 21
-  microseconds across runs; the table's run was the slowest.
+  so it costs more than producing a proof: about 10 microseconds at 100,000 entries.
 - **Tree memory** is the finished tree's heap size, counting a shared term once: about 280
   bytes per entry (the script's KB and MB are 1,024 and 1,048,576 bytes). Building needs
   more than this while the input, the tree's levels and the finished tree are all alive, so

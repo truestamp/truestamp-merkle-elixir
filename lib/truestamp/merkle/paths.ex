@@ -21,8 +21,6 @@ defmodule Truestamp.Merkle.Paths do
   # The codec writes a tree size as an unsigned 64-bit integer.
   @max_tree_size 0xFFFF_FFFF_FFFF_FFFF
 
-  @digest_hex_chars Hash.digest_hex_chars()
-
   @doc "The default, and largest, `:max_steps`: 64, enough for any 64-bit tree size."
   @spec max_steps() :: pos_integer()
   def max_steps, do: @max_steps
@@ -80,12 +78,12 @@ defmodule Truestamp.Merkle.Paths do
   def verify(leaf_hex, proof, root_hex, opts) do
     max_steps = max_steps!(opts)
 
-    with true <- Hash.digest_hex?(root_hex),
+    with {:ok, expected} <- Hash.parse_digest(root_hex),
          {:ok, root} <- root_from_proof(leaf_hex, proof, max_steps) do
       # Constant-time comparison, kept as a matter of habit rather than because
       # anything depends on it. Every value here is public, so there is no secret for
       # the comparison to leak. Both sides are 32 bytes.
-      :crypto.hash_equals(root, Hash.from_hex!(root_hex))
+      :crypto.hash_equals(root, expected)
     else
       _refused -> false
     end
@@ -121,11 +119,7 @@ defmodule Truestamp.Merkle.Paths do
   A path node's raw 32 bytes, if it is exactly 64 lowercase hex characters, or `:error`.
   """
   @spec parse_node(term()) :: {:ok, <<_::256>>} | :error
-  def parse_node(<<hex::binary-size(@digest_hex_chars)>>) do
-    if Hash.lowercase_hex?(hex), do: {:ok, Hash.from_hex!(hex)}, else: :error
-  end
-
-  def parse_node(_node), do: :error
+  def parse_node(node), do: Hash.parse_digest(node)
 
   @doc """
   The number of path nodes RFC 9162 section 2.1.3.2's loop consumes for this index and
@@ -143,8 +137,9 @@ defmodule Truestamp.Merkle.Paths do
   end
 
   defp root_from_proof(leaf_hex, proof, max_steps) do
-    with :ok <- check_leaf(leaf_hex) do
-      walk_leaf_hash(Hash.leaf(leaf_hex), proof, max_steps)
+    case Hash.parse_digest(leaf_hex) do
+      {:ok, digest} -> walk_leaf_hash(Hash.leaf(digest), proof, max_steps)
+      :error -> {:error, :invalid_leaf}
     end
   end
 
@@ -162,10 +157,6 @@ defmodule Truestamp.Merkle.Paths do
          {:ok, siblings} <- parse_path(proof.path, []) do
       root(proof.leaf_index, proof.tree_size - 1, leaf_hash, siblings)
     end
-  end
-
-  defp check_leaf(leaf_hex) do
-    if Hash.digest_hex?(leaf_hex), do: :ok, else: {:error, :invalid_leaf}
   end
 
   # RFC 9162 section 2.1.3.2 with hash = the leaf hash, fnum = leaf_index and

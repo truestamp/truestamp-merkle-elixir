@@ -32,15 +32,13 @@ defmodule Truestamp.Merkle.Hash do
   def empty_root, do: @empty_root
 
   @doc """
-  The leaf hash of a digest given as 64 lowercase hex characters: `SHA-256(0x00 || d)`
-  over the digest's 32 raw bytes, as raw bytes.
+  The leaf hash of a digest's raw bytes: `SHA-256(0x00 || digest)`, as raw bytes.
 
   The 0x00 prefix keeps a leaf hash out of the interior-node domain, so an interior node
-  can never be presented as a leaf. Raises `ArgumentError` if the digest is not hex;
-  callers check it with `digest_hex?/1` first.
+  can never be presented as a leaf. Callers get the bytes from `parse_digest/1`.
   """
-  @spec leaf(String.t()) :: <<_::256>>
-  def leaf(digest_hex), do: :crypto.hash(:sha256, <<0x00>> <> from_hex!(digest_hex))
+  @spec leaf(binary()) :: <<_::256>>
+  def leaf(digest), do: :crypto.hash(:sha256, <<0x00>> <> digest)
 
   @doc """
   The hash of an interior node over its two children's raw hashes:
@@ -56,30 +54,16 @@ defmodule Truestamp.Merkle.Hash do
   @spec to_hex(binary()) :: String.t()
   def to_hex(bytes), do: Base.encode16(bytes, case: :lower)
 
-  @doc "Lowercase hex as raw bytes. Raises `ArgumentError` for anything else."
-  @spec from_hex!(String.t()) :: binary()
-  def from_hex!(hex), do: Base.decode16!(hex, case: :lower)
-
   @doc """
-  Whether a term is exactly 64 bytes, every one of them lowercase hex: the only spelling
-  of a digest or a hash the library accepts.
+  A digest or hash spelled as exactly 64 lowercase hex characters, as its 32 raw bytes, or
+  `:error` for anything else: the only spelling the library accepts, checked and decoded
+  in one pass.
   """
-  @spec digest_hex?(term()) :: boolean()
-  # Matching the head width first is what makes this exact. A regex ending in `$`
-  # would also accept a hash followed by a single newline, because that is what `$`
-  # means in PCRE, and the trailing byte then blows up in Base.decode16!/2 well past
-  # the point where the caller was promised a clean rejection. Walking the bytes is
-  # also several times faster than a sigil in a function body, which the compiler
-  # rebuilds on every call.
-  def digest_hex?(<<hex::binary-size(@digest_hex_chars)>>), do: lowercase_hex?(hex)
-  def digest_hex?(_), do: false
-
-  @doc "Whether every byte of a binary is `0-9` or `a-f`. True for the empty binary."
-  @spec lowercase_hex?(term()) :: boolean()
-  def lowercase_hex?(<<>>), do: true
-
-  def lowercase_hex?(<<c, rest::binary>>) when c in ?0..?9 or c in ?a..?f,
-    do: lowercase_hex?(rest)
-
-  def lowercase_hex?(_), do: false
+  @spec parse_digest(term()) :: {:ok, <<_::256>>} | :error
+  # Matching the 64-byte head first is what makes this exact: a trailing newline or any
+  # other extra byte fails the match. (A regex ending in `$` would accept a hash followed
+  # by one newline, because that is what `$` means in PCRE.) Base.decode16/2 with
+  # case: :lower then refuses uppercase and every byte outside 0-9 and a-f.
+  def parse_digest(<<hex::binary-size(@digest_hex_chars)>>), do: Base.decode16(hex, case: :lower)
+  def parse_digest(_not_64_bytes), do: :error
 end
