@@ -82,13 +82,26 @@ defmodule Truestamp.Merkle.SecurityTest do
     end
   end
 
-  property "a proof from one tree fails against a tree of different entries" do
-    check all(a <- tree_gen(1), b <- tree_gen(1), Enum.sort(a) != Enum.sort(b)) do
+  # A tree's leaves are its digests in key order; keys are not hashed.
+  defp leaf_digests(entries), do: entries |> Enum.sort_by(& &1["key"]) |> Enum.map(& &1["hash"])
+
+  property "a proof from one tree fails against a tree whose digests, in key order, differ" do
+    check all(a <- tree_gen(1), b <- tree_gen(1), leaf_digests(a) != leaf_digests(b)) do
       %{"key" => key, "hash" => digest} = hd(a)
       proof = Merkle.proof(Merkle.new(a), key)
 
       refute Merkle.verify(digest, proof, Merkle.root(Merkle.new(b)))
     end
+  end
+
+  test "trees with other keys but the same digests in the same order share a root" do
+    [d1, d2] = for label <- ["x", "y"], do: RFC9162.hex(RFC9162.sha256(label))
+    a = [%{"key" => "a1", "hash" => d1}, %{"key" => "a2", "hash" => d2}]
+    b = [%{"key" => "b1", "hash" => d1}, %{"key" => "b2", "hash" => d2}]
+
+    # Keys only order the leaves, so the proofs are interchangeable.
+    assert Merkle.root(Merkle.new(a)) == Merkle.root(Merkle.new(b))
+    assert Merkle.verify(d1, Merkle.proof(Merkle.new(a), "a1"), Merkle.root(Merkle.new(b)))
   end
 
   property "an interior node presented as a leaf, with the path above it, fails" do

@@ -90,9 +90,13 @@ defmodule Truestamp.Merkle.Tree do
   defp pair_up([left, right | rest]), do: [Hash.node(left, right) | pair_up(rest)]
   defp pair_up(unpaired), do: unpaired
 
-  # Levels above the leaves: the ceiling of log2(count), or 0 for one leaf. It is also
-  # the longest path in the tree.
-  defp depth!(count) do
+  @doc """
+  The number of levels above the leaves of a tree of `count` entries: the ceiling of
+  log2(count), or 0 for none or one. It is also the longest path in the tree. Raises
+  `ArgumentError` above the 40-level ceiling, that is, for more than 2^40 entries.
+  """
+  @spec depth!(non_neg_integer()) :: non_neg_integer()
+  def depth!(count) do
     depth = if count <= 1, do: 0, else: bit_length(count - 1)
 
     if depth > @max_depth do

@@ -53,8 +53,9 @@ defmodule Truestamp.AssertionsTest do
     Enum.reverse(found)
   end
 
-  # A literal name, or one built by interpolation.
-  defp test_name?(name), do: is_binary(name) or match?({:<<>>, _, _}, name)
+  # A test's name is anything but a keyword list: a literal, an interpolation, or an
+  # expression computed when the module compiles.
+  defp test_name?(name), do: not (is_list(name) and Keyword.keyword?(name))
 
   defp check(nil, _where, acc), do: acc
 
@@ -73,6 +74,14 @@ defmodule Truestamp.AssertionsTest do
   end
 
   defp strengths(body) do
+    # `value || flunk(...)` guards a precondition; it checks nothing about the result, so
+    # the flunk on its right does not count as the test's assertion.
+    body =
+      Macro.prewalk(body, fn
+        {op, meta, [left, {:flunk, _, _}]} when op in [:||, :or] -> {op, meta, [left, nil]}
+        node -> node
+      end)
+
     {_, found} =
       Macro.prewalk(body, [], fn
         {a, _, [{t, _, [_]} | _]} = node, acc

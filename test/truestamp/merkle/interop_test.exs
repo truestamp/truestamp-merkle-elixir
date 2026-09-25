@@ -21,6 +21,19 @@ defmodule Truestamp.Merkle.InteropTest do
            |> Enum.map(&Path.dirname/1)
            |> Enum.sort()
 
+  # The files holding a tree over 32-byte leaf data, which also go through the public
+  # API. Read at compile time, so the test exists only where it has trees to check.
+  @digest_tree_files Enum.filter(@files, fn file ->
+                       file
+                       |> File.read!()
+                       |> JSON.decode!()
+                       |> Map.fetch!("trees")
+                       |> Enum.any?(fn tree ->
+                         match?(%{"leaf_data" => [_ | _]}, tree) and
+                           Enum.all?(tree["leaf_data"], &match?(<<_::binary-size(64)>>, &1))
+                       end)
+                     end)
+
   # One file and one Go program per implementation, and no fewer than these.
   @implementations ~w(certificate-transparency-go codenotary-merkletree cometbft-crypto-merkle
                       production-logs sigsum-go transparency-dev-merkle x-mod-sumdb-tlog)
@@ -37,14 +50,12 @@ defmodule Truestamp.Merkle.InteropTest do
 
   defp unhex(_other), do: :not_hex
 
-  defp leaf_hash(data), do: :crypto.hash(:sha256, <<0x00>> <> data)
-
   # A tree's leaf hashes: listed, or computed from the rule its file gives.
   defp leaf_hashes(%{"leaf_hashes" => hashes}) when is_list(hashes),
     do: Enum.map(hashes, &unhex/1)
 
   defp leaf_hashes(%{"leaf_data_rule" => %{"encoding" => encoding, "first" => first}} = tree) do
-    for i <- first..(first + tree["tree_size"] - 1)//1, do: leaf_hash(encode(encoding, i))
+    for i <- first..(first + tree["tree_size"] - 1)//1, do: Hash.leaf(encode(encoding, i))
   end
 
   defp encode("u16le", i), do: <<i::little-16>>
@@ -90,8 +101,8 @@ defmodule Truestamp.Merkle.InteropTest do
       assert Enum.any?(fixture["inclusion"], &(not expected(&1))), name
     end
 
-    # So the public-API test below runs on at least one tree somewhere.
-    assert Enum.any?(@files, fn file -> Enum.any?(load(file)["trees"], &digest_leaves?/1) end)
+    # So the public-API test below exists: cometbft's file holds trees of 32-byte data.
+    assert "cometbft-crypto-merkle.json" in Enum.map(@digest_tree_files, &Path.basename/1)
   end
 
   defp digest_leaves?(%{"leaf_data" => [_ | _] = data}),
@@ -114,13 +125,10 @@ defmodule Truestamp.Merkle.InteropTest do
             %{"kind" => "node", "left" => left, "right" => right, "hash" => hash} ->
               assert Hash.to_hex(Hash.node(unhex(left), unhex(right))) == hash, check["name"]
 
-            # The library hashes 32-byte digests only; other leaf data is checked through
-            # the trees and proofs built on its leaf hashes.
-            %{"kind" => "leaf", "input_hex" => <<input::binary-size(64)>>, "hash" => hash} ->
+            # Leaf data of any length: the public API takes 32-byte digests only, but the
+            # leaf hash is the same function of the bytes.
+            %{"kind" => "leaf", "input_hex" => input, "hash" => hash} ->
               assert Hash.to_hex(Hash.leaf(unhex(input))) == hash, check["name"]
-
-            %{"kind" => "leaf"} ->
-              :ok
           end
         end
       end
@@ -129,6 +137,11 @@ defmodule Truestamp.Merkle.InteropTest do
         for tree <- load(@fixture_file)["trees"] do
           leaves = leaf_hashes(tree)
           assert length(leaves) == tree["tree_size"], tree["name"]
+
+          # Listed leaf hashes are the leaf data's, hashed by the library.
+          with [_ | _] = data <- tree["leaf_data"], [_ | _] = hashes <- tree["leaf_hashes"] do
+            assert Enum.map(data, &Hash.to_hex(Hash.leaf(unhex(&1)))) == hashes, tree["name"]
+          end
 
           root = leaves |> Tree.levels() |> List.last() |> elem(0)
           assert Hash.to_hex(root) == tree["root"], tree["name"]
@@ -158,25 +171,28 @@ defmodule Truestamp.Merkle.InteropTest do
         end
       end
 
-      test "trees over 32-byte leaf data, through the public API" do
-        for %{"leaf_data" => data} = tree <- load(@fixture_file)["trees"], digest_leaves?(tree) do
-          # Keys that sort in list order keep the file's leaf order.
-          entries =
-            data
-            |> Enum.with_index()
-            |> Enum.map(fn {digest, i} ->
-              %{
-                "key" => "k" <> String.pad_leading(Integer.to_string(i), 9, "0"),
-                "hash" => digest
-              }
-            end)
+      if file in @digest_tree_files do
+        test "trees over 32-byte leaf data, through the public API" do
+          for %{"leaf_data" => data} = tree <- load(@fixture_file)["trees"],
+              digest_leaves?(tree) do
+            # Keys that sort in list order keep the file's leaf order.
+            entries =
+              data
+              |> Enum.with_index()
+              |> Enum.map(fn {digest, i} ->
+                %{
+                  "key" => "k" <> String.pad_leading(Integer.to_string(i), 9, "0"),
+                  "hash" => digest
+                }
+              end)
 
-          merkle = Merkle.new(entries)
-          root = Merkle.root(merkle)
-          assert root == tree["root"], tree["name"]
+            merkle = Merkle.new(entries)
+            root = Merkle.root(merkle)
+            assert root == tree["root"], tree["name"]
 
-          for %{"key" => key, "hash" => digest} <- entries do
-            assert Merkle.verify(digest, Merkle.proof(merkle, key), root), tree["name"]
+            for %{"key" => key, "hash" => digest} <- entries do
+              assert Merkle.verify(digest, Merkle.proof(merkle, key), root), tree["name"]
+            end
           end
         end
       end

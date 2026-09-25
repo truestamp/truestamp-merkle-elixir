@@ -6,7 +6,7 @@ defmodule Truestamp.Merkle.TreeTest do
   use ExUnitProperties
 
   alias Truestamp.Merkle
-  alias Truestamp.Merkle.{Generators, RFC9162}
+  alias Truestamp.Merkle.{Generators, RFC9162, Tree}
 
   @digest "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678"
 
@@ -28,6 +28,39 @@ defmodule Truestamp.Merkle.TreeTest do
           assert tuple_size(hd(tree.tree_levels)) == n
           assert length(tree.tree_levels) == depth + 1
         end
+      end
+    end
+
+    test "a tree of 65,537 entries through new/1 has the RFC's root, depth and paths" do
+      entries = RFC9162.entries(65_537)
+      digests = RFC9162.digests(entries)
+      tree = Merkle.new(Enum.reverse(entries))
+
+      assert Merkle.root(tree) == RFC9162.hex(RFC9162.mth(digests))
+      assert Merkle.size(tree) == 65_537
+      assert tree.tree_depth == 17
+
+      for m <- [0, 32_767, 65_535, 65_536] do
+        expected = Enum.map(RFC9162.path(m, digests), &RFC9162.hex/1)
+        entry = Enum.at(entries, m)
+        assert Merkle.proof(tree, entry["key"]).path == expected, "m=#{m}"
+      end
+    end
+
+    test "the depth ceiling is 40 levels: 2^40 entries fit, one more does not" do
+      for {count, depth} <- [
+            {0, 0},
+            {1, 0},
+            {2, 1},
+            {3, 2},
+            {65_537, 17},
+            {Bitwise.bsl(1, 40), 40}
+          ] do
+        assert Tree.depth!(count) == depth, "count=#{count}"
+      end
+
+      assert_raise ArgumentError, ~r/exceeds maximum 40/, fn ->
+        Tree.depth!(Bitwise.bsl(1, 40) + 1)
       end
     end
 
