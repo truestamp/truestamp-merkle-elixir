@@ -102,25 +102,29 @@ the size, per section 2.1.3.2:
 The index and size fix the path's length, so a path one node short or one node long
 fails.
 
-**Take the tree size from where the root comes from.** The root does not fix the size:
-many proofs still reach the same root when `tree_size` is changed. Across every proof in
-trees of 1 to 300 entries, 97% still verify with `tree_size` raised by one. The index
-goes with it: the last of three entries also verifies as index 1 of a two-entry tree.
-Given the true size, no other index verifies, unless another entry has the same digest.
-Certificate Transparency takes the size
-from the signed tree head that carries the root, and a verifier here must take it from
-the record that gives it the root, never from the proof alone.
+**Take the tree size from where the root comes from.** A root commits to its tree's
+size, but a verifier cannot read the size out of it, and the verification above never
+checks it: many proofs still reach the same root when `tree_size` is changed, though no
+tree of that size has that root. Across every proof in trees of 1 to 300 entries, 97%
+still verify with `tree_size` raised by one. The index goes with it: the last of three
+entries also verifies as index 1 of a two-entry tree. Given the true size, no other index
+verifies, unless another entry has the same digest. Certificate Transparency takes the
+size from the signed tree head that carries the root, and a verifier here must take it
+from the record that gives it the root (`size/1` is the number to publish), never from
+the proof alone.
 
 A proof is refused, never repaired. The checks run in this order, and the first that
 fails names the refusal:
 
 1. `invalid_leaf`: the digest being proved is not exactly 64 lowercase hex characters.
 2. `invalid_proof`: the proof is not a map with an integer `leaf_index` of at least 0, an
-   integer `tree_size` from 1 to 2^64 - 1, and a list as its `path`.
+   integer `tree_size` from 1 to 2^64 - 1, and a list as its `path`. Other members are
+   ignored.
 3. `index_out_of_range`: `leaf_index` is not below `tree_size`.
 4. `too_many_steps`: the path the index and size require is longer than the cap. The cap
-   is 64, a caller can lower it (32 admits trees of up to 2^32 entries), and the path is
-   not read.
+   is 64, a caller can lower it (32 fits every proof from a tree of up to 2^32 entries),
+   and the path is not read. The cap limits a path's length, never the `tree_size` a
+   proof states.
 5. `wrong_path_length`: the path is not a proper list of exactly that length. It is
    counted no further than one node past it.
 6. `invalid_node`: a node is not exactly 64 lowercase hex characters. Uppercase and a
@@ -136,11 +140,11 @@ A proof has one binary form:
     8 bytes       tree_size, unsigned, big-endian
     the rest      each path node's 32 raw bytes, bottom to top
 
-Its length is exactly 16 bytes plus 32 for each node the index and size require.
-Decoding refuses anything else, so one proof has one encoding: an argument that is not a
-binary is `invalid_binary`, an index not below the size (a size of 0 included) is
-`index_out_of_range`, and any other length is `wrong_length`. There is no text form; spell the binary in hex or base64 as a format
-needs.
+Its length is exactly 16 bytes plus 32 for each node the index and size require. Decoding
+refuses anything else, so one proof has one encoding: an argument that is not a binary is
+`invalid_binary`, an index not below the size (a size of 0 included) is
+`index_out_of_range`, and any other length is `wrong_length`. There is no text form; spell
+the binary in hex or base64 as a format needs.
 
 ### Limits
 

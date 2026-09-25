@@ -107,8 +107,8 @@ defmodule Truestamp.Merkle.VectorsTest do
       accept = Enum.find(@vectors["walk_accepts"], &String.starts_with?(&1["name"], "a size-3"))
       tree = Enum.find(@vectors["trees"], &(&1["name"] == "leaf-3"))
 
-      # The root does not fix the tree size; a verifier takes the size from where it
-      # takes the root.
+      # The walk does not check the tree size, so a verifier takes the size from where
+      # it takes the root.
       assert accept["root"] == tree["root"]
       assert accept["proof"]["tree_size"] != tree["tree_size"]
     end

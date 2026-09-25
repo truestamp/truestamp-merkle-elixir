@@ -5,20 +5,20 @@ SPDX-License-Identifier: Apache-2.0
 
 # Known answers from other implementations
 
-Each file here holds the Merkle known answers of a Go implementation of RFC 9162 section 2.1
-(the tree and inclusion proofs of RFC 6962): the roots, hashes and inclusion proofs its tests
-publish, the corrupted proofs they reject, and cases computed with the implementation's own
-functions from its tests' data (named `generated:`). `production-logs.json` holds other
-published data instead: inclusion proofs from Rekor's production log, the tessera and
-serverless-log test log, and ics23's test vectors.
+Each file here holds the Merkle known answers of a Go implementation of RFC 9162 section
+2.1 (the tree and inclusion proofs of RFC 6962): the roots, hashes and inclusion proofs
+its tests publish, the corrupted proofs they reject, and cases computed with the
+implementation's own functions from its tests' data (named `generated:`).
+`production-logs.json` holds other published data instead: inclusion proofs from Rekor's
+production log, the tessera and serverless-log test log, and ics23's test vectors.
 
 `test/truestamp/merkle/interop_test.exs` checks the library against every tree root, every
-inclusion verdict, every node hash, and, for every accepted proof whose tree is in the file,
-the path the library itself produces. Most implementations take leaf data of any length and
-the library's public API takes only 32-byte digests, so these checks work at the leaf-hash
-level, through the same internal functions the public API uses; trees whose leaf data are
-32-byte digests also go through the public API. The leaf hashes of other data are confirmed by
-each file's Go program, below.
+inclusion verdict, every node hash, and, for every accepted proof whose tree is in the
+file, the path the library itself produces. Most implementations take leaf data of any
+length and the library's public API takes only 32-byte digests, so these checks work at
+the leaf-hash level, through the same internal functions the public API uses; trees whose
+leaf data are 32-byte digests also go through the public API. The leaf hashes of other
+data are confirmed by each file's Go program, below.
 
 | File | Implementation | Version | License | Trees | Inclusion cases | Largest tree size |
 |---|---|---|---|---:|---:|---:|
@@ -30,16 +30,16 @@ each file's Go program, below.
 | `sigsum-go.json` | sigsum.org/sigsum-go | v0.14.1 | BSD-2-Clause | 108 | 1,638 | 100 |
 | `production-logs.json` | Rekor proofs (via sigstore-go, sigstore-conformance, rekor, rekor-tiles), the tessera and serverless-log test log, ics23 test vectors | per source, in the file | Apache-2.0 | 18 | 420 | 1,340,288,195 |
 
-The largest tree size is the largest in a tree or a proof; the largest trees built from their
-leaves have 65,535 entries (transparency-dev). Every implementation agrees with RFC 9162 on
-every tree root. On inclusion verdicts, one does
-not: codenotary/merkletree accepts a path cut short at the right edge, or one with extra nodes,
-when the chain it computes happens to equal the root it is given. Its file keeps that verdict
-as `valid` and adds `rfc9162_valid: false` for each of those 785 cases, and the library is held
-to the RFC answer. ics23 carries no index or size and accepts a path of any length; the
+The largest tree size is the largest in a tree or a proof; the largest trees built from
+their leaves have 65,535 entries (transparency-dev). Every implementation agrees with RFC
+9162 on every tree root. On inclusion verdicts, one does not: codenotary/merkletree
+accepts a path cut short at the right edge, or one with extra nodes, when the chain it
+computes happens to equal the root it is given. Its file keeps that verdict as `valid` and
+adds `rfc9162_valid: false` for each of those 785 cases, and the library is held to the
+RFC answer. ics23 carries no index or size and accepts a path of any length; the
 production-logs file records that as a deviation and takes its verdicts from
-transparency-dev/merkle. golang.org/x/mod's tlog loops forever in its split helper for a tree
-size above 2^62; its program guards every call that takes a size from a file.
+transparency-dev/merkle. golang.org/x/mod's tlog loops forever in its split helper for a
+tree size above 2^62; its program guards every call that takes a size from a file.
 
 ## The format
 
@@ -57,9 +57,9 @@ Hashes are lowercase hex. Each file has:
 - `inclusion`: `{name, leaf_hash, leaf_index, tree_size, path, root, valid, rfc9162_valid?,
   upstream_expectation}`. `valid` is the implementation's own verdict. `rfc9162_valid`, given
   where the implementation or its upstream test disagreed with RFC 9162 or with each other,
-  is RFC 9162 section 2.1.3.2's verdict, and the library is held to it. Refused cases include values
-  no verifier should accept: negative indexes, a tree size of 0, and hashes that are not 32
-  bytes.
+  is RFC 9162 section 2.1.3.2's verdict, and the library is held to it. Refused cases
+  include values no verifier should accept: negative indexes, a tree size of 0, and hashes
+  that are not 32 bytes.
 
 Some integers reach 2^64 - 1. A JavaScript reader needs a JSON parser that keeps 64-bit
 integers exact.
@@ -75,10 +75,10 @@ licenses; its `NOTICE` lists them. From that directory:
     go run . -fixtures ../../../vectors/interop/<name>.json -ours ../../../vectors/merkle.json
 
 A check confirms every value with the implementation's own functions and fails unless the
-file is exactly what `-write` produces. `-ours` also checks this library's `vectors/merkle.json`
-with that implementation: every root, every path, every accepted proof, and that the index and
-path-length refusals are refused (codenotary's two acceptances among them are pinned, so a
-change is caught).
+file is exactly what `-write` produces. `-ours` also checks this library's
+`vectors/merkle.json` with that implementation: every root, every path, every accepted
+proof, and that the index and path-length refusals are refused (codenotary's two
+acceptances among them are pinned, so a change is caught).
 
 `mix test --include go_interop` runs all seven programs that way, and CI does so for every
 push to `main` and every pull request. Plain `mix test` needs no Go: it reads the committed

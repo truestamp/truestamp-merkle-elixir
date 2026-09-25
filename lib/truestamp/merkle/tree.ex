@@ -75,7 +75,8 @@ defmodule Truestamp.Merkle.Tree do
   root.
 
   Every tree is built here, and the interop tests call it with other implementations'
-  leaf hashes, which need not be hashes of 32-byte digests.
+  leaf hashes, which need not be hashes of 32-byte digests. It takes ready-made leaf
+  hashes, so it applies no leaf prefix of its own: never give it untrusted values.
   """
   @spec levels([binary()]) :: [tuple(), ...]
   def levels([]), do: [{Hash.empty_root()}]

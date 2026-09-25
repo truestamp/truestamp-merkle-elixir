@@ -30,15 +30,17 @@ defmodule Truestamp.Merkle do
   path of the wrong length is refused. Any RFC 6962 or RFC 9162 verifier accepts these
   proofs.
 
-  **Take the tree size from where you take the root, not from the proof.** A root does
-  not fix the size of its tree, and the size decides which index a path proves. In trees
-  of 1 to 300 entries, 43,730 of the 45,150 proofs (97%) still reach their root with
-  `tree_size` raised by one, and the index can move with the size: the last of three
-  entries also verifies as index 1 of a two-entry tree. Given the true size, no other
-  index verifies unless another entry has the same digest. Certificate Transparency gets
-  the size from the signed tree head, beside the root; do the same, and check that a
-  proof's `tree_size` equals it. A proof checked without that still shows the digest is
-  in the tree, but not where.
+  **Take the tree size from where you take the root, not from the proof.** A root
+  commits to its tree's size, but a verifier cannot read the size out of it, and the
+  RFC 9162 walk never checks it: the size only decides which side each path node goes
+  on. In trees of 1 to 300 entries, 43,730 of the 45,150 proofs (97%) still reach their
+  root with `tree_size` raised by one, though no tree of that size has that root, and the
+  index can move with the size: the last of three entries also verifies as index 1 of a
+  two-entry tree. Given the true size, no other index verifies unless another entry has
+  the same digest. Certificate Transparency gets the size from the signed tree head,
+  beside the root; do the same with `size/1`, and check that a proof's `tree_size`
+  equals it. A proof checked without that still shows the digest is in the tree, but not
+  where.
 
   ## Security Properties
 
@@ -47,8 +49,9 @@ defmodule Truestamp.Merkle do
   - **Fixed-size inputs**: every digest, root and path node is exactly 64 lowercase hex
     characters. Uppercase is refused, never normalized.
   - **Bounded work**: a proof's index and size fix its path length, which is checked
-    before any node is read or hashed; `:max_steps` lowers the ceiling (32 admits trees
-    of up to 2^32 entries).
+    before any node is read or hashed; `:max_steps` lowers the ceiling on a path's
+    length (32 fits every proof from a tree of up to 2^32 entries). It does not limit the
+    `tree_size` a proof states.
   - **One encoding per proof**: the binary form has fixed-width fields and a path length
     the index and size determine.
 
@@ -250,7 +253,9 @@ defmodule Truestamp.Merkle do
   ## Options
 
     * `:max_steps` - the longest path accepted, an integer from 0 to #{@max_steps}.
-      Defaults to #{@max_steps}. 32 admits trees of up to 2^32 entries.
+      Defaults to #{@max_steps}. It bounds the work of one walk: 32 fits every proof from
+      a tree of up to 2^32 entries. It does not limit the `tree_size` a proof states, so
+      compare that with the size published beside the root.
 
   An unknown option, or a `:max_steps` outside that range, raises `ArgumentError`.
   Everything else may come from a stranger, so it is refused with an error instead of
@@ -259,6 +264,7 @@ defmodule Truestamp.Merkle do
     * `{:error, :invalid_leaf}` - `leaf_hex` is not exactly 64 lowercase hex characters.
     * `{:error, :invalid_proof}` - `proof` is not a map with an integer `:leaf_index` of
       at least 0, an integer `:tree_size` from 1 to 2^64 - 1, and a list as its `:path`.
+      Other keys in the map are ignored.
     * `{:error, :index_out_of_range}` - `leaf_index` is not below `tree_size`.
     * `{:error, :too_many_steps}` - the path this index and size require is longer than
       `:max_steps`.

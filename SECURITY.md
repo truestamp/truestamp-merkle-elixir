@@ -39,14 +39,16 @@ given one.
 
 The proof's `leaf_index` and `tree_size` add a second claim, that the value sat at that
 position in a tree of that many entries, and that claim holds only when the size comes
-from the same trusted place as the root. The root does not fix the size. Most proofs
-still reach the same root with `tree_size` raised by one (97% of all proofs in trees of 1
-to 300 entries), and the index can move with it: the last of three entries also verifies
-as index 1 of a two-entry tree. Given the true size, no other index verifies, unless
-another entry carries the same digest, in which case the digest is at that index too. This is
-RFC 9162's design, not a defect of this library: Certificate Transparency takes the size
-from the signed tree head that carries the root. A verifier here takes it from the record
-that gives it the root, and never from the proof alone.
+from the same trusted place as the root. The root commits to the size, but a verifier
+cannot read it out of the root, and the RFC 9162 walk never checks it. Most proofs still
+reach the same root with `tree_size` raised by one (97% of all proofs in trees of 1 to 300
+entries), though no tree of that size has that root, and the index can move with it: the
+last of three entries also verifies as index 1 of a two-entry tree. Given the true size,
+no other index verifies, unless another entry carries the same digest, in which case the
+digest is at that index too. This is RFC 9162's design, not a defect of this library:
+Certificate Transparency takes the size from the signed tree head that carries the root. A
+verifier here takes it from the record that gives it the root, and never from the proof
+alone.
 
 Root distribution is outside this library. A proof and a root obtained from the same
 party in the same response prove nothing about that party's honesty: they can build a
@@ -89,6 +91,11 @@ node, or the root. Keys affect leaf *order* (`new/1` orders leaves by key, and a
 different order would give a different root) and they are checked for uniqueness at
 construction, but no proof ever carries evidence about which key a leaf was filed under.
 
+**Not the order, and not absence.** Sorting by key is a rule the builder follows, not a
+property a verifier can check: a root does not show that its entries were sorted, or that
+it was built by this library at all. And there are no absence proofs: nothing here shows
+that a key or a digest is not in a tree.
+
 So a valid proof for hash `H` under root `R` says exactly that `H` was in that tree. It
 does not say `H` belonged to record 42, or to account X, or to a document with a given
 name. If your application needs that binding, commit the identifier into the digest
@@ -126,10 +133,10 @@ inconvenient.
 
 None of this is homegrown. The tree shape, the audit path and the verification loop are
 RFC 9162 section 2.1's, so any implementation of that RFC or of RFC 6962 reproduces the
-roots and accepts the proofs; the tests hold the library to the published known answers of six
-Go implementations and to proofs from production logs (`vectors/interop/`). The only thing
-this library adds is the order: entries are sorted by key before the digests become the
-RFC's leaf data.
+roots and accepts the proofs; the tests hold the library to the published known answers of
+six Go implementations and to proofs from production logs (`vectors/interop/`). The only
+thing this library adds is the order: entries are sorted by key before the digests become
+the RFC's leaf data.
 
 ## Canonical hex
 
@@ -140,12 +147,13 @@ nodes as raw 32-byte values. Non-canonical input is refused, never
 normalized. `new/1` raises `ArgumentError`; `walk/3` returns an error and `verify/4`
 returns `false`.
 
-Refusing rather than downcasing is deliberate. Two spellings of the same hash would be
-two distinct strings in the tree's entries and in stored proofs, and a library that
-quietly accepts both invites a caller to believe the spelling does not matter. The cost is that an uppercase hash produces a `false` from `verify/4` that looks
-exactly like a proof that does not check out; `walk/3` names the refusal instead. Hexdump
-tools commonly emit uppercase, so downcase before calling rather than reading that `false`
-as a cryptographic result.
+Refusing rather than downcasing is deliberate. Two spellings of the same hash would be two
+distinct strings in the tree's entries and in stored proofs, and a library that quietly
+accepts both invites a caller to believe the spelling does not matter. The cost is that an
+uppercase hash produces a `false` from `verify/4` that looks exactly like a proof that
+does not check out; `walk/3` names the refusal instead. Hexdump tools commonly emit
+uppercase, so downcase before calling rather than reading that `false` as a cryptographic
+result.
 
 The validators match a fixed 64-byte head and then decode it with `Base.decode16/2` in
 lowercase mode, rather than matching a regular expression. That closes a real hole: PCRE's
@@ -166,11 +174,11 @@ are hashes over two or more entries and confirm nothing without all of their dig
 
 Whether this matters is a question about your data, not about the tree. A digest that is
 the hash of guessable content is exposed to that confirmation wherever it appears, in a
-proof or not; one that is a composite including something unpredictable is not. Truestamp's
-leaf values are composites of that kind (an item's includes its random-bearing ULID and its
-entropy witnesses), and Truestamp shows each block's counts of items and entropy
-observations, whose sum is its leaf count, on its explorer anyway, so there a proof
-discloses what the front end states outright.
+proof or not; one that is a composite including something unpredictable is not.
+Truestamp's leaf values are composites of that kind (an item's leaf value includes its
+ULID, which has random bits, and its entropy witnesses), and Truestamp shows each block's
+counts of items and entropy observations, whose sum is its leaf count, on its explorer
+anyway, so there a proof discloses what the front end states outright.
 
 ## Bounds, limits, and which entry points face untrusted input
 
@@ -179,14 +187,15 @@ untrusted callers. None of them raises on its input: only an invalid option rais
 
 `walk/3` and `verify/4` check the value being proved, then the proof's shape and ranges
 (its path must be a list), then that the index is below the size, then the path length the
-index and size require against the step cap, and only then the path itself. That length
-is at most 64, since `tree_size` is at most 2^64 - 1, and a caller can lower the cap through
-`:max_steps` (32 admits trees of up to 2^32 entries). The path's length is counted no further than one node past the
-required length, so a path of a million elements is refused after reading one more than
-it needed, and no node is decoded or hashed until the length is right. So the hashing a
-stranger can ask for is bounded by the cap. `walk/3` returns `{:ok, root}` or an
-`{:error, reason}` naming the check that refused, and `verify/4`, which also checks the
-root's format, returns `false` for all of them.
+index and size require against the step cap, and only then the path itself. That length is
+at most 64, since `tree_size` is at most 2^64 - 1, and a caller can lower the cap through
+`:max_steps` (32 fits every proof from a tree of up to 2^32 entries). The cap limits a
+path's length, not the `tree_size` a proof states. The path's length is counted no further
+than one node past the required length, so a path of a million elements is refused after
+reading one more than it needed, and no node is decoded or hashed until the length is
+right. So the hashing a stranger can ask for is bounded by the cap. `walk/3` returns
+`{:ok, root}` or an `{:error, reason}` naming the check that refused, and `verify/4`,
+which also checks the root's format, returns `false` for all of them.
 
 `proof_from_binary/1` returns `{:ok, proof}` or `{:error, reason}`, and accepts only the
 canonical binary form: the index below the size and exactly the bytes the path needs. One
@@ -197,8 +206,9 @@ default cap. It is for proofs you produced, not for input from a stranger.
 
 The tree depth cap of 40 is a different kind of limit and should not be read as a load
 control. It turns an impossible input into a clear error: it refuses a tree of more than
-2^40 (about 1.1 trillion) entries, and memory is exhausted long before that, at roughly
-280 MB retained per million entries plus comparable transient use during construction.
+2^40 (about 1.1 trillion) entries, and memory is exhausted long before that. A finished
+tree retains roughly 280 to 310 MB per million entries, and building one peaks at about
+three times that, on top of the input list (measured at a million entries).
 
 Construction has no limit of its own on the number of entries. `new/1` will attempt
 whatever list it is handed, so tree construction belongs behind input you control.

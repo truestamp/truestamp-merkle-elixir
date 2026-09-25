@@ -324,7 +324,7 @@ defmodule Truestamp.Merkle.PathTest do
     # RFC 9162's design, not a defect: the size must come from the same trusted source
     # as the root, which is why the docs say to check it there.
 
-    test "is not fixed by the root: a size-3 proof claiming size 4 still reaches the size-3 root" do
+    test "is not checked by the walk: a size-3 proof claiming size 4 still reaches the size-3 root" do
       entries = RFC9162.entries(3)
       tree = Merkle.new(entries)
       [first | _] = entries

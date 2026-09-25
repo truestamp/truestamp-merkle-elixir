@@ -7,9 +7,10 @@ defmodule Truestamp.Merkle.Paths do
   # Inclusion proofs, as RFC 9162 section 2.1.3 defines them: the leaf's index, the
   # tree's size, and the audit path of sibling hashes from the leaf up. There are no
   # direction markers; the verifier derives each step's side from the index and size.
-  # The root does not fix the tree size, so the size must come from the same trusted
-  # source as the root. The RFC names the two counters fn and sn; they are fnum and snum
-  # here, since fn is reserved.
+  # The walk does not check the tree size (the root commits to it, but it cannot be read
+  # out of the root), so the size must come from the same trusted source as the root.
+  # The RFC names the two counters fn and sn; they are fnum and snum here, since fn is
+  # reserved.
 
   alias Truestamp.Merkle.Hash
 
@@ -149,6 +150,10 @@ defmodule Truestamp.Merkle.Paths do
 
   `walk/3` and `verify/4` come through here once the digest is checked, and the interop
   tests call it with other implementations' leaf hashes. `max_steps` is taken as given.
+
+  It starts from a hash the caller has already made a leaf hash, so it skips the 0x00
+  prefix that keeps an interior node from being presented as a leaf. Never give it an
+  untrusted value; untrusted input goes through `walk/3` and `verify/4`.
   """
   @spec walk_leaf_hash(<<_::256>>, term(), non_neg_integer()) ::
           {:ok, <<_::256>>} | {:error, Truestamp.Merkle.walk_error()}
