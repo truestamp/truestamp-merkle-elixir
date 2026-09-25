@@ -25,6 +25,7 @@ defmodule Truestamp.Merkle.Tree do
   defp build([], _sort?), do: empty()
 
   defp build(entries, sort?) when is_list(entries) do
+    if List.improper?(entries), do: build(:not_a_list, sort?)
     Input.validate_entries!(entries)
 
     pairs =

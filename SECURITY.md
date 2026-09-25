@@ -25,16 +25,28 @@ you expected to happen. Only the latest commit on `main` is supported.
 
 ## What a proof attests
 
-An inclusion proof is a claim about one 32-byte value and one root:
+An inclusion proof is a claim about one 32-byte digest and one root:
 
-> This leaf hash was one of the leaves of the tree whose root is that root hash.
+> The leaf hash of this digest, SHA-256(0x00 || digest), was one of the leaves of the tree
+> whose root is that root hash.
 
-That is the whole claim. It establishes existence (the value was present when the tree
-was built) and integrity (change one bit of the value, or one bit of any sibling on the
-path, and the recomputed root no longer matches). `verify/4` recomputes the root from the
-leaf value and the proof's siblings and compares it against the root you supplied, so the
-proof is only as meaningful as your confidence in that root. `walk/3` recomputes the same
-root and hands it back without being given one.
+It establishes existence (the value was present when the tree was built) and integrity
+(change one bit of the value, or one bit of any node on the path, and the recomputed root
+no longer matches). `verify/4` recomputes the root from the value and the proof and
+compares it with the root you supplied, so the proof is only as meaningful as your
+confidence in that root. `walk/3` recomputes the same root and hands it back without being
+given one.
+
+The proof's `leaf_index` and `tree_size` add a second claim, that the value sat at that
+position in a tree of that many entries, and that claim holds only when the size comes
+from the same trusted place as the root. The root does not fix the size. Most proofs
+still reach the same root with `tree_size` raised by one (97% of all proofs in trees of 1
+to 300 entries), and the index can move with it: the last of three entries also verifies
+as index 1 of a two-entry tree. Given the true size, no other index verifies, unless
+another entry carries the same digest, in which case the digest is at that index too. This is
+RFC 9162's design, not a defect of this library: Certificate Transparency takes the size
+from the signed tree head that carries the root. A verifier here takes it from the record
+that gives it the root, and never from the proof alone.
 
 Root distribution is outside this library. A proof and a root obtained from the same
 party in the same response prove nothing about that party's honesty: they can build a
@@ -51,9 +63,10 @@ an independent witness.
 **Not creation time.** A Merkle proof carries no time at all. Any timing claim comes from
 the surrounding system, which has to establish independently when the leaf value existed
 and when the root was published. The proof only ties one to the other. In Truestamp, for
-instance, a metadata hash bound into the leaf value fixes a submission window and the
-block holding that leaf is committed to public blockchains, and the two together are what
-pin a submission window around the leaf. Even then the claim is about submission, not
+instance, a metadata hash bound into the leaf value fixes the submitted-after edge of a
+submission window, and the commitment of the block holding that leaf to public blockchains
+fixes the submitted-before edge; the two together pin a submission window around the
+leaf. Even then the claim is about submission, not
 about when the underlying data came into existence.
 
 **Not authorship.** Nothing about who submitted a value is hashed into a leaf. If you need
@@ -61,24 +74,24 @@ to attribute a value to a submitter, that binding has to be arranged upstream or
 outside the proof entirely. Truestamp records authorship as `Item.creator_id`,
 deliberately outside every hash.
 
-**Not an append-only history.** Only inclusion proofs exist here. There are no consistency
-proofs, no Signed Tree Heads, and no log monitoring, so none of the append-only guarantees
+**Not an append-only history.** RFC 9162 also defines consistency proofs between two
+sizes of a log; this library implements only inclusion proofs. There are no consistency
+proofs, no signed tree heads and no log monitoring, so none of the append-only guarantees
 a Certificate Transparency log provides are available from this module. Tamper evidence
 over time has to be built around the roots by the caller. Truestamp gets it from the block
 hash chain and the public blockchain commitments.
 
 **Not any binding between a key and a hash.** This is the one most likely to be assumed.
-`verify/4` takes a leaf hash, a proof and a root, and `walk/3` a leaf hash and a proof.
+`verify/4` takes a digest, a proof and a root, and `walk/3` a digest and a proof.
 There is no key argument, and there is no place to put one. `proof/2` takes a key, but
-only to look up which leaf position to walk from; the key is never hashed into a leaf, an
-interior node, or the root. Keys affect leaf *order* (the default `sort: true` orders
-leaves by key, and a different order gives a different root) and they are checked for
-uniqueness at construction, but no proof ever carries evidence about which key a leaf was
-filed under.
+only to look up the entry's position; the key is never hashed into a leaf, an interior
+node, or the root. Keys affect leaf *order* (the default `sort: true` orders leaves by
+key, and a different order gives a different root) and they are checked for uniqueness at
+construction, but no proof ever carries evidence about which key a leaf was filed under.
 
 So a valid proof for hash `H` under root `R` says exactly that `H` was in that tree. It
 does not say `H` belonged to record 42, or to account X, or to a document with a given
-name. If your application needs that binding, commit the identifier into the leaf hash
+name. If your application needs that binding, commit the identifier into the digest
 upstream, before the value reaches the tree. Truestamp is an example of how that looks in
 practice: `item_hash` is a domain-separated composite over the record's id along with its
 claims and metadata hashes, so the id is inside the value the proof is about. A system
@@ -87,9 +100,10 @@ database has no cryptographic link between the two, and this library will not su
 
 ## Hash construction and domain separation
 
-Leaves and interior nodes are hashed in separate domains:
+Leaves and interior nodes are hashed in separate domains, as RFC 9162 section 2.1 (and
+RFC 6962 before it) defines:
 
-    leaf     = SHA-256(0x00 || leaf_hash)          leaf_hash is 32 bytes
+    leaf     = SHA-256(0x00 || digest)             digest is 32 bytes
     interior = SHA-256(0x01 || left || right)      left and right are 32 bytes each
     empty    = SHA-256("")                         root of a tree with no leaves
 
@@ -100,9 +114,9 @@ second-preimage attack on unprefixed Merkle trees. Without it, the 64-byte conca
 leaf and produce a shorter valid-looking path to the root. With the prefix, a value that
 was hashed as an interior node can never be reinterpreted as a leaf: verification hashes
 the supplied value with `0x00`, an interior node was hashed with `0x01`, and the two
-results differ. This was checked by sweeping every node value at every level of a padded
-tree against both its own path and the level-0 path at the same index. No forgery
-succeeded.
+results differ. The test suite checks this on random trees: an interior node, presented as
+a leaf with its own position, size and the path above it, reaches the root when walked as
+a node and fails when verified as a leaf.
 
 The 32-byte input check is secondary, defense in depth, and it should not be described as
 what prevents interior-node forgery. It refuses a 64-byte value at the door rather than
@@ -110,140 +124,86 @@ letting it through to be rejected by the prefix rule, and it keeps the hash surf
 uniform, but the domain separation is what makes the attack impossible rather than merely
 inconvenient.
 
-None of this hashing is homegrown: the leaf and node construction follows RFC 6962. The
-padded tree shape does not, so a verifier written strictly to that standard computes a
-different root at any leaf count other than 0, 1, or a power of two. The proof encoding is
-likewise specific to this library.
+None of this is homegrown. The tree shape, the audit path and the verification loop are
+RFC 9162 section 2.1's, so any implementation of that RFC or of RFC 6962 reproduces the
+roots and accepts the proofs; the tests hold the library to the published known answers of six
+Go implementations and to proofs from production logs (`vectors/interop/`). The only thing
+this library adds is the order: entries are sorted by key before the digests become the
+RFC's leaf data.
 
 ## Canonical hex
 
-Every hash crossing the API is exactly 64 lowercase hex characters, on the way in and on
-the way out: the digests you supply for entries, the root hashes you get back, leaf values,
-and proof siblings alike. Non-canonical input is refused, never normalized. `new/2` and the
-raises `ArgumentError`; `walk/3` returns an error and `verify/4` returns `false`.
+Every hash crossing the API as text is exactly 64 lowercase hex characters, on the way in
+and on the way out: the digests you supply for entries, the root hashes you get back, the
+digests being proved, and the nodes of a path alike. The binary form of a proof carries its
+nodes as raw 32-byte values. Non-canonical input is refused, never
+normalized. `new/2` raises `ArgumentError`; `walk/3` returns an error and `verify/4`
+returns `false`.
 
 Refusing rather than downcasing is deliberate. Two spellings of the same hash would be
-two distinct leaves in the leaf index and two distinct byte strings on the wire, and a
-library that quietly accepts both invites a caller to believe the spelling does not
-matter. The cost is that an uppercase hash produces a `false` from `verify/4` that looks
+two distinct strings in the tree's entries and in stored proofs, and a library that
+quietly accepts both invites a caller to believe the spelling does not matter. The cost is that an uppercase hash produces a `false` from `verify/4` that looks
 exactly like a proof that does not check out; `walk/3` names the refusal instead. Hexdump
 tools commonly emit uppercase, so downcase before calling rather than reading that `false`
 as a cryptographic result.
 
 The validators walk the bytes rather than matching a regular expression. That is faster,
-and it closed a real hole: PCRE's `$` matches before a trailing newline, so a 64-hex hash
-with a `\n` appended passed validation and then raised out of `Base.decode16!/2` deep
-inside verification, in a function documented never to raise. Matching a fixed 64-byte
-head cannot do that.
-
-## The reserved padding constant
-
-The tree is built by padding the leaf set up to the next power of two and hashing a
-perfect binary tree. That shape is frozen: roots built this way are already in circulation
-and committed to public blockchains, so it cannot be revised. Every padding slot stands for
-one reserved value:
-
-    PADHASH      96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7
-                 = SHA-256(0x00 0x00), the leaf *value* a padding slot carries
-
-    padding leaf d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319
-                 = SHA-256(0x00 || PADHASH), the *leaf hash* stored in the tree
-
-Padding slots are placed by the tree, never by a caller. They carry no key, so they are
-absent from the leaf index and `proof/2` will not emit a proof for one. The `__pad__` key
-prefix, in any case, stays reserved: construction refuses a caller's key that begins with
-it.
-
-`PADHASH` is refused on both ends. `new/2` raises `ArgumentError` on it, `walk/3` returns
-`{:error, :reserved_leaf}` and `verify/4` returns `false` when it is presented as the value
-being proved.
-
-Both halves are needed. The attack is cheap and requires no cryptography: whoever owns the
-last real leaf of a padded tree can assemble a complete, valid path for a padding slot out
-of their own published proof and their own leaf hash, and before the reject that forged
-proof verified. Refusing it only at construction closes nothing, because the attacker never
-calls the constructor. Refusing it only at verification would silently break a caller who
-genuinely hashed the two-byte file `0x0000` and used the digest as a leaf: their tree would
-build, their proof would generate, and verification would return `false` forever with no
-explanation. The input reject turns that into a loud build-time error naming the constant,
-and it is what earns the right to say that a proof for `PADHASH` is always a proof of a
-padding slot rather than of a real entry.
-
-The reject applies to the leaf value only. The padding *leaf hash* `d37300dc...` is an
-ordinary sibling in most proofs from a padded tree and must keep verifying, so the step
-parser deliberately does not look for it. Rejecting siblings would break verification
-for a large fraction of all real entries.
-
-There is no wider family of forgeable constants. Interior node values, including the
-all-padding subtree hashes and the empty-tree root, are safe by domain separation:
-presenting one as a leaf re-hashes it with `0x00`. `PADHASH` was forgeable for exactly one
-reason, that it is the leaf *input* of a real leaf rather than a node value, so a single
-constant and a single comparison close it completely.
-
-Whether the input reject can ever inconvenience you depends on where your leaf values come
-from. A caller hashing arbitrary bytes might one day be handed that two-byte file, and
-will get the build-time error. A caller whose leaf values are server-derived
-domain-separated composites cannot reach it at all. Truestamp is in the second position:
-its leaf values (`item_hash`, `observation_hash`, `block_hash`) each carry a reserved
-application prefix byte and have preimages over a hundred bytes long, while `PADHASH`'s
-preimage is two bytes beginning with `0x00`. A collision would be a SHA-256 break, and a
-submitter cannot grind toward one because they do not choose the leaf value.
+and it closes a real hole: PCRE's `$` matches before a trailing newline, so a 64-hex hash
+with a `\n` appended would pass such a pattern and then raise out of `Base.decode16!/2`
+deep inside verification, in a function documented never to raise. Matching a fixed
+64-byte head cannot do that.
 
 ## What an observer can infer from a proof
 
-A proof discloses more than the leaf it proves. The padding constants are public and
-recomputable by anyone: `SHA-256(0x00 || PADHASH)` gives the padding leaf hash, and
-iterating `SHA-256(0x01 || x || x)` gives the hash of an all-padding subtree at any level.
-From one proof, with no other access, an observer learns:
+A proof discloses more than the digest it proves. It states the tree's entry count and
+the entry's position outright, as `tree_size` and `leaf_index`. Its first node is usually a
+neighbouring entry's leaf hash, `SHA-256(0x00 || digest)`, so anyone holding a guess at that
+neighbour's digest can confirm the guess. A higher node can be one too: when a level has an
+odd number of nodes its last one moves up unchanged, so the last entry of a tree with an odd
+count, for one, can appear in other entries' proofs as its own leaf hash. The other nodes
+are hashes over two or more entries and confirm nothing without all of their digests.
 
-- the tree depth, which is the proof length, and therefore the padded size `2^depth`
-- the proved leaf's exact index, decoded from the `l` and `r` direction tags
-- which sibling subtrees are pure padding, by equality against those constants, and
-  therefore a range for the real leaf count. For a leaf near the end of the tree the range
-  collapses and the exact count is recovered.
-
-This is accepted rather than overlooked. Deterministic padding is a requirement, not a
-slip: a third party has to be able to recompute the root from published data alone, and
-random padding values would have to be published to allow that, which republishes the
-count. A keyed PRF has the same defect, since the key would have to be published to
-verifiers. Whether the leakage matters is a question about your data, not about the tree.
-Truestamp publishes the leaf count per block on an unauthenticated explorer anyway, so
-there the inference discloses what the front end states outright.
-
-Worth noting that padding to a power of two *reduces* leakage relative to an unpadded
-tree, where proof length varies per leaf and the shape encodes the leaf count directly.
-The uniform shape helps; the recognizable constant is the part that hurts.
-Refusing `PADHASH` as an input hash also removes the only cheap way to spoof this
-inference, since a caller can no longer make a real leaf hash to the padding constant.
+Whether this matters is a question about your data, not about the tree. A digest that is
+the hash of guessable content is exposed to that confirmation wherever it appears, in a
+proof or not; one that is a composite including something unpredictable is not. Truestamp's
+leaf values are composites of that kind (an item's includes its random-bearing ULID and its
+entropy witnesses), and Truestamp shows each block's counts of items and entropy
+observations, whose sum is its leaf count, on its explorer anyway, so there a proof
+discloses what the front end states outright.
 
 ## Bounds, limits, and which entry points face untrusted input
 
-`walk/3`, `verify/4`, `steps_from_binary/1`, and `decode_proof_base64/1` are the entry
-points safe to put in front of untrusted callers. All four cap the proof at 64 steps
-before hashing anything, which is the real bound on the hashing a stranger's bytes can ask
-for, and `walk/3` and `verify/4` accept a lower cap through `:max_steps` (Truestamp passes
-32). `walk/3` and `verify/4` never raise on their input: each validates the leaf format,
-the reserved constant, the step count (counting no further than one past the cap), and
-every step before hashing anything. `walk/3` returns `{:ok, root}` or an
-`{:error, reason}` naming the check that refused, and `verify/4`, which also checks the
-root's format, returns `false` for all of them. Only an invalid option raises. The
-decoders return `{:ok, steps}` or `{:error, reason}`, and accept only the canonical binary
-form, so one path never has two encodings. A 64-step proof spans a tree of 2^64 leaves,
-past anything that could be built, so the cap costs no legitimate proof.
+`walk/3`, `verify/4` and `proof_from_binary/1` are the entry points safe to put in front of
+untrusted callers. None of them raises on its input: only an invalid option raises.
 
-`steps_to_binary/1` and `encode_proof_base64/1` raise `ArgumentError` on input that would
-not survive the round trip. They are for proofs you produced, not for bytes from a
-stranger.
+`walk/3` and `verify/4` check the value being proved, then the proof's shape and ranges
+(its path must be a list), then that the index is below the size, then the path length the
+index and size require against the step cap, and only then the path itself. That length
+is at most 64, since `tree_size` is at most 2^64 - 1, and a caller can lower the cap through
+`:max_steps` (32 admits trees of up to 2^32 entries). The path's length is counted no further than one node past the
+required length, so a path of a million elements is refused after reading one more than
+it needed, and no node is decoded or hashed until the length is right. So the hashing a
+stranger can ask for is bounded by the cap. `walk/3` returns `{:ok, root}` or an
+`{:error, reason}` naming the check that refused, and `verify/4`, which also checks the
+root's format, returns `false` for all of them.
+
+`proof_from_binary/1` returns `{:ok, proof}` or `{:error, reason}`, and accepts only the
+canonical binary form: the index below the size and exactly the bytes the path needs. One
+proof never has two encodings.
+
+`proof_to_binary/1` raises `ArgumentError` on a proof that `walk/3` would refuse with its
+default cap. It is for proofs you produced, not for input from a stranger.
 
 The tree depth cap of 40 is a different kind of limit and should not be read as a load
-control. It keeps the depth arithmetic in range. A tree deep enough to reach it holds
-about a trillion leaves, and memory is exhausted long before that, at roughly 300 MB
-retained per million leaves plus comparable transient use during construction.
+control. It turns an impossible input into a clear error: it refuses a tree of more than
+2^40 (about 1.1 trillion) entries, and memory is exhausted long before that, at roughly
+280 MB retained per million entries plus comparable transient use during construction.
 
 Construction has no limit of its own on the number of entries. `new/2` will attempt
-whatever list it is handed, so tree construction belongs behind input you control. Construction also raises rather than
-returning errors: `ArgumentError` for an invalid key, an invalid hash, the reserved padding
-constant, a duplicate key, or a depth over the cap.
+whatever list it is handed, so tree construction belongs behind input you control.
+Construction also raises rather than returning errors: `ArgumentError` for input that is
+not a list of entry maps, an invalid key, an invalid hash, a duplicate key, an invalid
+option, or a depth over the cap.
 
 ## Constant-time comparison
 
@@ -256,5 +216,5 @@ a defense, and it should not appear in a security summary as though it were one.
 
 ## Platform requirements
 
-OTP 25 or newer, which is where `:crypto.hash_equals/2` arrived. Beyond that the module
-depends only on `:crypto`, `Base`, `Bitwise`, and the standard library.
+Elixir 1.20, and so OTP 27 or newer. Beyond that the module depends only on `:crypto`,
+`Base`, `Bitwise`, and the standard library.

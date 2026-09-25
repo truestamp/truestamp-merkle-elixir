@@ -8,9 +8,10 @@ SPDX-License-Identifier: Apache-2.0
 SHA-256 Merkle trees with inclusion proofs, in pure Elixir with no runtime dependencies
 beyond OTP's `:crypto`.
 
-Truestamp builds every block's tree to the contract below, and the commitments it
-records on public blockchains bind those roots. The construction rules are therefore
-frozen: changing one would change roots that are already on chain.
+The tree is RFC 9162's Merkle Tree Hash over entries sorted by key, and its proofs are
+RFC 9162 inclusion proofs. The contract below is meant never to change: Truestamp builds the
+trees behind its blocks with this library and commits those blocks' hashes to public
+blockchains, so a changed rule would break proofs already given out.
 
 **Status:** 0.1.0, not yet published to Hex.
 
@@ -20,13 +21,14 @@ frozen: changing one would change roots that are already on chain.
 entries = [%{"key" => "a", "hash" => digest_a}, %{"key" => "b", "hash" => digest_b}]
 tree = Truestamp.Merkle.new(entries)
 root = Truestamp.Merkle.root(tree)
-steps = Truestamp.Merkle.proof(tree, "a")
+proof = Truestamp.Merkle.proof(tree, "a")
+# %{leaf_index: 0, tree_size: 2, path: ["<64 hex characters>"]}
 
-{:ok, ^root} = Truestamp.Merkle.walk(digest_a, steps)
-true = Truestamp.Merkle.verify(digest_a, steps, root, max_steps: 32)
+{:ok, ^root} = Truestamp.Merkle.walk(digest_a, proof)
+true = Truestamp.Merkle.verify(digest_a, proof, root, max_steps: 32)
 
-binary = Truestamp.Merkle.steps_to_binary(steps)
-{:ok, ^steps} = Truestamp.Merkle.steps_from_binary(binary)
+binary = Truestamp.Merkle.proof_to_binary(proof)
+{:ok, ^proof} = Truestamp.Merkle.proof_from_binary(binary)
 ```
 
 Until it is on Hex, depend on it by commit:
@@ -40,6 +42,12 @@ does not attest.
 
 ## The tree contract
 
+The tree is the Merkle Tree Hash of RFC 9162 section 2.1.1, computed over the entries'
+digests in key order, and a proof is the audit path of section 2.1.3.1, verified by the
+algorithm of section 2.1.3.2. RFC 6962 defines the same tree and the same audit path, so
+an implementation of either RFC reproduces this library's roots and accepts its proofs
+when it is given the sorted digests as its leaf data.
+
 ### Inputs
 
 An entry is a key and a digest.
@@ -48,77 +56,95 @@ An entry is a key and a digest.
   caller has already computed. Uppercase and any other length are refused. The tree
   hashes digests, never documents.
 - **Key.** A non-empty binary of at most 36 characters, drawn only from ASCII letters,
-  digits, `.`, `_` and `-`. It must not begin with `__pad__` under a case-insensitive
-  comparison, since that prefix is reserved for padding slots. Each key appears once,
-  compared byte for byte, so `Key` and `key` are two keys. A key only orders the leaves;
-  it is never hashed. Two keys may carry the same digest.
-- **Reserved digest.** `96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7`,
-  which is `SHA-256(0x00 0x00)`, fills the padding slots. It is refused as an entry's
-  digest, and refused as the value a proof is presented for, because such a proof would
-  prove a padding slot rather than an entry.
+  digits, `.`, `_` and `-`. Each key appears once, compared byte for byte, so `Key` and
+  `key` are two keys. A key only orders the leaves; it is never hashed. Two keys may
+  carry the same digest.
 
 ### Building a tree
 
 1. Sort the entries by key, ascending by raw byte value. The comparison is never
    locale-aware.
-2. Hash each entry to a leaf: `SHA-256(0x00 || digest)`, over the digest's 32 raw bytes.
-3. Append copies of the padding leaf after the last sorted leaf until the list's length
-   is a power of two. The padding leaf is `SHA-256(0x00 || reserved digest)`:
-   `d37300dc2c6e038a83ee197ca0e181a77f6875afd9f537d31ca4995876481319`.
-4. Hash each adjacent pair, left to right, into a node: `SHA-256(0x01 || left || right)`.
-   Repeat on the resulting level until one hash remains. That hash is the root.
+2. The sorted digests' 32 raw bytes are the RFC's leaf data `D[0]` to `D[n-1]`. The root
+   is `MTH(D[n])`:
+   - `MTH({})` is `SHA-256("")`, which is
+     `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+   - `MTH({d})` is `SHA-256(0x00 || d)`, the leaf hash.
+   - For `n > 1`, with `k` the largest power of two smaller than `n`,
+     `MTH(D[n])` is `SHA-256(0x01 || MTH(D[0:k]) || MTH(D[k:n]))`.
 
-Two cases fall out of these rules. An empty tree's root is `SHA-256("")`, which is
-`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. A one-entry tree has
-no padding and no nodes, so its root is its only leaf and its inclusion proof is empty.
-
-Leaf and node hashing follow RFC 6962. The padded shape does not: RFC 6962 splits any
-count at the largest power of two smaller than it and adds no padding. A verifier
-written strictly to RFC 6962 reproduces a root from this library only when the entry
-count is 0 or a power of two.
+Level by level, the same tree is: hash each adjacent pair of the level, left to right,
+into `SHA-256(0x01 || left || right)`, and carry an unpaired last hash up to the next
+level unchanged. Nothing is padded. A one-entry tree's root is its only leaf hash.
 
 ### Proving an entry
 
-An entry's inclusion path lists the sibling at each level of the tree, from its leaf up
-to the root. Each step is `l:` or `r:` followed by the sibling's 64 lowercase hex
-characters: `l` means the sibling sits to the left of the running hash, `r` to the right.
+A proof is three values:
 
-1. Start from the entry's leaf, `SHA-256(0x00 || digest)`.
-2. For an `l` step the running hash becomes `SHA-256(0x01 || sibling || running)`, and
-   for an `r` step `SHA-256(0x01 || running || sibling)`.
-3. The hash after the last step is the root the path implies. It proves the entry only
-   when it equals a root obtained some other way.
+- `leaf_index`: the entry's position among the sorted entries, from 0.
+- `tree_size`: the number of entries.
+- `path`: the audit path `PATH(leaf_index, D[tree_size])`, bottom to top, each node as 64
+  lowercase hex characters. A one-entry tree's path is empty.
 
-A one-entry tree's path is empty, and its root is the leaf itself. A path is refused,
-never repaired. The checks run in this order, and the first that fails names the refusal:
+A path carries no directions. The verifier derives each node's side from the index and
+the size, per section 2.1.3.2:
+
+1. If `leaf_index` is not below `tree_size`, fail. Set `fn` to `leaf_index`, `sn` to
+   `tree_size - 1`, and `r` to the leaf hash `SHA-256(0x00 || digest)`.
+2. For each node `p` of the path, in order:
+   - If `sn` is 0, fail.
+   - If `fn` is odd or equals `sn`, set `r` to `SHA-256(0x01 || p || r)`; then, while
+     `fn` is even and not 0, shift `fn` and `sn` right by one bit.
+   - Otherwise set `r` to `SHA-256(0x01 || r || p)`.
+   - Shift `fn` and `sn` right by one bit.
+3. If `sn` is not 0, fail. Otherwise `r` is the root the proof implies. It proves the
+   entry only when it equals a root obtained some other way.
+
+The index and size fix the path's length, so a path one node short or one node long
+fails.
+
+**Take the tree size from where the root comes from.** The root does not fix the size:
+many proofs still reach the same root when `tree_size` is changed. Across every proof in
+trees of 1 to 300 entries, 97% still verify with `tree_size` raised by one. The index
+goes with it: the last of three entries also verifies as index 1 of a two-entry tree.
+Given the true size, no other index verifies, unless another entry has the same digest.
+Certificate Transparency takes the size
+from the signed tree head that carries the root, and a verifier here must take it from
+the record that gives it the root, never from the proof alone.
+
+A proof is refused, never repaired. The checks run in this order, and the first that
+fails names the refusal:
 
 1. `invalid_leaf`: the digest being proved is not exactly 64 lowercase hex characters.
-2. `reserved_leaf`: it is the reserved digest. The padding leaf's hash may still appear
-   as a sibling, and is valid there.
-3. `too_many_steps`: the path has more steps than the cap. The cap is 64, a caller can
-   lower it (Truestamp uses 32), and the path is refused before any step is read.
-4. `invalid_step`: a step is anything but `l:` or `r:` and exactly 64 lowercase hex
-   characters. Uppercase, a trailing newline and a bare hash are all refused.
+2. `invalid_proof`: the proof is not a map with an integer `leaf_index` of at least 0, an
+   integer `tree_size` from 1 to 2^64 - 1, and a list as its `path`.
+3. `index_out_of_range`: `leaf_index` is not below `tree_size`.
+4. `too_many_steps`: the path the index and size require is longer than the cap. The cap
+   is 64, a caller can lower it (32 admits trees of up to 2^32 entries), and the path is
+   not read.
+5. `wrong_path_length`: the path is not a proper list of exactly that length. It is
+   counted no further than one node past it.
+6. `invalid_node`: a node is not exactly 64 lowercase hex characters. Uppercase and a
+   trailing newline are refused.
 
 A port may spell these refusals its own way, but must refuse in this order.
 
-### Storing a path
+### Storing a proof
 
-A path has one binary form:
+A proof has one binary form:
 
-    byte 0         the number of steps, 0 to 64
-    next bytes     ceil(steps / 8) direction bytes, least significant bit first: bit N
-                   is 1 when step N is `r`, and every bit from the step count up is 0
-    the rest       each sibling's 32 raw bytes, bottom to top
+    8 bytes       leaf_index, unsigned, big-endian
+    8 bytes       tree_size, unsigned, big-endian
+    the rest      each path node's 32 raw bytes, bottom to top
 
-The empty path is the single byte `0x00`. Decoding accepts only this canonical form: a
-set bit past the step count, a missing byte or a trailing one is refused, so one path
-never has two encodings. For text, the form is written in unpadded base64url, and the
-decoder accepts only the one spelling the encoder writes.
+Its length is exactly 16 bytes plus 32 for each node the index and size require.
+Decoding refuses anything else, so one proof has one encoding: an argument that is not a
+binary is `invalid_binary`, an index not below the size (a size of 0 included) is
+`index_out_of_range`, and any other length is `wrong_length`. There is no text form; spell the binary in hex or base64 as a format
+needs.
 
 ### Limits
 
-- An inclusion proof holds at most 64 steps.
+- `tree_size` is at most 2^64 - 1, so a path holds at most 64 nodes.
 - A tree is at most 40 levels deep. Memory runs out long before that; construction has
   no entry limit of its own, so build trees from input you control.
 
@@ -126,86 +152,96 @@ decoder accepts only the one spelling the encoder writes.
 
 `vectors/merkle.json` is the source of truth for this library's known answers, and a port
 of the contract must reproduce every value in it. `vectors/generate.exs` writes it from
-the contract above without using the library, CI fails if the file and the generator
-disagree, and the tests hold the library to every value it produces. Hashes are lowercase
-hex throughout. The file's sections:
+RFC 9162's recursive definitions without using the library, CI fails if the file and the
+generator disagree, and the tests hold the library to every value it produces. Hashes are
+lowercase hex throughout. The file's sections:
 
-- `constants`: `empty_root`, the root of a tree with no entries; `reserved_digest`;
-  `padding_leaf`; and `max_steps`, the default cap on a path.
+- `constants`: `empty_root`, the root of a tree with no entries; `max_steps`, the default
+  cap on a path; and `max_tree_size`, 2^64 - 1.
+- Every case has a `name`.
 - `trees`: each tree's `entries` as listed (not sorted, so a port must sort), its `root`,
-  its `depth` (levels above the leaves; 0 for an empty or one-entry tree), its
-  `padded_size` (leaves after padding; 0 for an empty tree), and `rfc6962_root`, the root
-  strict RFC 6962 gives the same entries, which differs from `root` exactly when padding
-  was needed. Each of its `paths` gives an entry's `key` and `digest`, its `steps`, and
-  their binary form as `binary_hex` and `base64url`.
+  its `depth` (the longest path; 0 for an empty or one-entry tree) and its `tree_size`.
+  Each of its `paths` gives an entry's `key` and `digest`, the proof's `leaf_index`,
+  `tree_size` and `path`, and the proof's binary form as `binary_hex`.
 - `entry_refusals`: sets of entries a tree must refuse to build from.
-- `walk_accepts`: a `digest`, `steps` and `max_steps` a walk must accept, with the `root`
-  it reaches.
-- `walk_refusals`: the same inputs a walk must refuse, with the `error` it names.
-- `binary_refusals` and `base64url_refusals`: encodings the decoders must refuse, with
-  the `error` each names. The binary decoder checks the depth byte (`too_many_steps`),
-  then the length it implies (`wrong_length`), then the unused direction bits
-  (`unused_direction_bits`); text other than the encoder's spelling is
-  `invalid_base64url`.
+- `walk_accepts`: a `digest`, a `proof` object and a `max_steps` a walk must accept, with
+  the `root` it reaches and the proof's binary form as `binary_hex`.
+- `walk_refusals`: the same inputs a walk must refuse, with the `error` it names. A proof
+  field here may hold any JSON value, since some cases test fields of the wrong type.
+- `binary_refusals`: binary forms the decoder must refuse, as `binary_hex`, with the
+  `error` it names.
 
 The values below are a summary of that file.
 
 **Small trees.** `n` entries with keys `key01` through `keyNN` and digests
-`SHA-256("leaf<i>")` for `i` from 1 to `n`. Counts 3, 5, 6 and 7 are padded.
+`SHA-256("leaf<i>")` for `i` from 1 to `n`.
 
 | n | Root |
 |---|---|
 | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | 1 | `e6f3e0324c47532b4584166b9cdcbfb5f1dceaac9b097512d0e9e8501977daa0` |
 | 2 | `5d3d9c89b11a0055ba0e43c2aaf4d3814717c01a8079bc1d05db80c41852b0f5` |
-| 3 | `738707d8051d65bb5b11d36cac93f7e5dccdee4676e836800a5d4e5c444103f1` |
+| 3 | `f078fbabd10cf51db1dc3552d960996e0fdae24ca5559d3aec20bf04cb65c441` |
 | 4 | `1d8219ac8846f635dab3201c241583de32a73ca2f1b361cec04a419ae7806324` |
-| 5 | `2012533b81a14bd8c0ba9172d14ca4bd761449bf10065c5baf89bc487497e891` |
-| 6 | `148337559cd25959c1c5f80dc1b0518a05ec308fbff4db47f2e133a67234f898` |
-| 7 | `a08d49ae18a1ad35c5925064aa8fba66a6dfdcc24cd1ba9047d0e87493230ed4` |
+| 5 | `3d7804d812524d931d28e05e6ee06d73a1f4c8c3a4f47a4210b14af54794b6fa` |
+| 6 | `eeb8408c501ba0bd6ad670d40a2252226bff000f8551ba513bee7e5ff6675bd9` |
+| 7 | `df96a3ff1e450beeb5dc7e83e77f9a9f93508f4316d20c842a529c07fd82590f` |
+| 8 | `1c24772836336888fb591f49966a0e0c11a9d9a894e4ae6c478615f08f0ac30e` |
 
-**The RFC 6962 difference.** The same inputs give different roots under strict RFC 6962
-whenever padding applies:
-
-| n | This library | Strict RFC 6962 |
-|---|---|---|
-| 3 | `738707d8051d65bb5b11d36cac93f7e5dccdee4676e836800a5d4e5c444103f1` | `f078fbabd10cf51db1dc3552d960996e0fdae24ca5559d3aec20bf04cb65c441` |
-| 5 | `2012533b81a14bd8c0ba9172d14ca4bd761449bf10065c5baf89bc487497e891` | `3d7804d812524d931d28e05e6ee06d73a1f4c8c3a4f47a4210b14af54794b6fa` |
-
-**A path.** In the two-entry tree, `key01`'s path is the single step
-`r:d78acbc356fa171ce40bb72ffa74cbde06c36aefc2678a9af18d3975581e969f`, whose binary form
-is 34 bytes, or `AQHXisvDVvoXHOQLty_6dMveBsNq78JniprxjTl1WB6Wnw` in base64url. The
-vectors file has every entry's path for n = 1 to 7, and three paths in the tree below.
+**Proofs.** In the two-entry tree, `key01`'s proof is `leaf_index` 0, `tree_size` 2 and
+the single node `d78acbc356fa171ce40bb72ffa74cbde06c36aefc2678a9af18d3975581e969f`, and
+its binary form is 48 bytes:
+`00000000000000000000000000000002d78acbc356fa171ce40bb72ffa74cbde06c36aefc2678a9af18d3975581e969f`.
+In the three-entry tree, `key03` is the unpaired leaf, so its path is the single node
+over the first two entries, which is the two-entry tree's root. The vectors file has
+every entry's proof for n = 1 to 8 and for an 11-entry tree listed out of byte order, with
+two keys sharing a digest, and three proofs in the tree below.
 
 **A larger tree.** 300 entries with keys `lk0001` through `lk0300` and digests
 `SHA-256("bigleaf<i>")` have the root
-`f8c3f9a207a67fc22a297edcdf1dc0f17840ee9c8648ee3c8a7e5a71e5e42b92`, at depth 9.
-`lk0001`'s path has nine steps, so its direction bits take two bytes.
+`41c2631074f52162508f886a3e49a03d930639906fad474f18fe77afe18111b1`, at depth 9.
+`lk0001`'s path has nine nodes, and `lk0300`'s five.
+
+## Checked against other implementations
+
+`vectors/interop/` holds known answers from six Go implementations, transparency-dev/merkle,
+golang.org/x/mod's sumdb/tlog, CometBFT, certificate-transparency-go, codenotary/merkletree
+and sigsum-go, and from other published data: inclusion proofs from Rekor's production log,
+the tessera and serverless-log test log, and ics23's test vectors. That is 330 trees and
+7,198 inclusion cases: the values each project's tests publish, the corrupted proofs they
+reject, and cases computed with each implementation's own functions from its tests' data
+(named `generated:` in the files). The tests hold this library to every root and verdict in
+them, at the leaf-hash level, and to the RFC 9162 verdict where an implementation departs
+from it. `vectors/interop/README.md` lists every source, and
+`mix test --include go_interop` also runs each implementation over the files and over this
+library's own vectors.
 
 ## Performance
 
-Measured with `mix run bench/performance.exs` on an Apple M3 Max with 64 GB, running
-Elixir 1.20.1 on OTP 29. A tree is built by one process; the build time is the median of
-three builds, and the proof and verify times are means over up to 10,000 random entries.
+Measured with `mix run bench/performance.exs` (in the `prod` environment) on an Apple M3 Max
+with 64 GB, running Elixir 1.20.1 on OTP 29. A tree is built by one process; the build time
+is the median of three builds, and the proof and verify times are means over up to 10,000
+random entries.
 
 | Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 1,000 | 10 | 1.7 ms | 587,199/s | 273.1 KB | 2.2 us | 8.9 us | 323 B |
-| 10,000 | 14 | 18.9 ms | 528,569/s | 3.0 MB | 3.0 us | 11.7 us | 451 B |
-| 100,000 | 17 | 295.4 ms | 338,510/s | 28.4 MB | 4.9 us | 14.6 us | 548 B |
+| 1,000 | 10 | 1.4 ms | 698,812/s | 271.5 KB | 1.5 us | 9.3 us | 336 B |
+| 10,000 | 14 | 14.4 ms | 692,569/s | 2.7 MB | 1.8 us | 12.0 us | 464 B |
+| 100,000 | 17 | 232.3 ms | 430,424/s | 26.5 MB | 3.6 us | 20.4 us | 560 B |
 
-- **Build rate** falls as the tree grows, from over 500,000 entries a second at 10,000
-  entries to about 340,000 at 100,000.
-- **Proofs** hold one sibling per level, so their time and size grow with the depth, the
-  base-2 logarithm of the padded entry count. Proof size is the compact binary form: a
-  depth byte, the direction bits, and 32 bytes per step.
-- **Verification** checks the format of every value it is given and hashes once per step,
-  so it costs more than producing a proof: about 15 microseconds at 100,000 entries.
-- **Tree memory** is the finished tree's heap size, counting a shared term once: about
-  300 bytes per entry. Padding adds to it: 10,000 entries pad to 16,384 leaves, and every
-  level above them is sized for 16,384. Building needs more than this while the input,
-  the tree's levels and the finished tree are all alive; the `Truestamp.Merkle` module
-  documentation gives sizing guidance for large trees.
+- **Build rate** holds near 700,000 entries a second to 10,000 entries and falls to about
+  430,000 at 100,000.
+- **Proofs** hold at most one node per level, so their time and size grow with the depth,
+  the base-2 logarithm of the entry count rounded up. Proof size is the binary form of the
+  longest proof among the sampled entries: 16 bytes for the index and size, and 32 bytes
+  per node.
+- **Verification** checks the format of every value it is given and hashes once per node,
+  so it costs more than producing a proof. At 100,000 entries it measured between 15 and 21
+  microseconds across runs; the table's run was the slowest.
+- **Tree memory** is the finished tree's heap size, counting a shared term once: about 280
+  bytes per entry (the script's KB and MB are 1,024 and 1,048,576 bytes). Building needs
+  more than this while the input, the tree's levels and the finished tree are all alive, so
+  size a large workload by memory before time.
 - Timings vary between runs by a few percent, and by more on a busy machine.
 
 Two more scripts cover the rest: `mix run bench/proof_generation_benchmark.exs` times

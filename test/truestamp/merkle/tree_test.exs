@@ -184,7 +184,7 @@ defmodule Truestamp.Merkle.TreeTest do
     end
 
     test "input that is not a list of entry maps" do
-      for bad <- [%{}, "entries", nil] do
+      for bad <- [%{}, "entries", nil, [entry("a") | :tail]] do
         assert_raise ArgumentError, ~r/Invalid input data/, fn -> Merkle.new(bad) end
       end
 

@@ -10,7 +10,9 @@ defmodule Truestamp.Merkle.VectorsTest do
   alias Truestamp.Merkle.RFC9162
 
   @vectors_path Path.expand("../../../vectors/merkle.json", __DIR__)
+  @readme_path Path.expand("../../../README.md", __DIR__)
   @external_resource @vectors_path
+  @external_resource @readme_path
   @vectors @vectors_path |> File.read!() |> JSON.decode!()
 
   @fields %{"leaf_index" => :leaf_index, "tree_size" => :tree_size, "path" => :path}
@@ -148,6 +150,15 @@ defmodule Truestamp.Merkle.VectorsTest do
         assert Atom.to_string(reason) == error, name
       end
     end
+  end
+
+  test "every hash and binary form the README prints is in the vectors file" do
+    vectors = File.read!(@vectors_path)
+    printed = ~r/\b[0-9a-f]{64,}\b/ |> Regex.scan(File.read!(@readme_path)) |> List.flatten()
+
+    # The empty root, the small-tree roots, a path node, a binary form and the large root.
+    assert length(Enum.uniq(printed)) >= 12
+    assert Enum.reject(printed, &String.contains?(vectors, &1)) == []
   end
 
   # Where a refused proof would lead if nothing but the RFC's loop checked it: hex in

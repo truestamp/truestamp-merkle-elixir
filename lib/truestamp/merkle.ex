@@ -19,8 +19,10 @@ defmodule Truestamp.Merkle do
   `SHA-256("")`. A tree of `n > 1` entries splits at the largest power of two below `n`
   (RFC 9162, section 2.1.1): no padding, no filler leaves. Entries are sorted byte-wise by
   key first, so the same set of entries always gives the same root, whatever order they
-  arrive in. The README states the contract a port must reproduce, and
-  `vectors/merkle.json` holds its known answers.
+  arrive in. The README states the contract a port must reproduce,
+  `vectors/merkle.json` holds its known answers, and `vectors/interop/` holds the known
+  answers of six Go implementations and of production logs, which the tests also hold the
+  library to.
 
   An inclusion proof is RFC 9162's: the entry's `leaf_index`, the `tree_size`, and the
   `path` of sibling hashes from the leaf up. A proof carries no left or right markers:
@@ -33,9 +35,10 @@ defmodule Truestamp.Merkle do
   of 1 to 300 entries, 43,730 of the 45,150 proofs (97%) still reach their root with
   `tree_size` raised by one, and the index can move with the size: the last of three
   entries also verifies as index 1 of a two-entry tree. Given the true size, no other
-  index verifies. Certificate Transparency gets the size from the signed tree head,
-  beside the root; do the same, and check that a proof's `tree_size` equals it. A proof
-  checked without that still shows the digest is in the tree, but not where.
+  index verifies unless another entry has the same digest. Certificate Transparency gets
+  the size from the signed tree head, beside the root; do the same, and check that a
+  proof's `tree_size` equals it. A proof checked without that still shows the digest is
+  in the tree, but not where.
 
   ## Security Properties
 
@@ -44,8 +47,8 @@ defmodule Truestamp.Merkle do
   - **Fixed-size inputs**: every digest, root and path node is exactly 64 lowercase hex
     characters. Uppercase is refused, never normalized.
   - **Bounded work**: a proof's index and size fix its path length, which is checked
-    before any node is read or hashed; `:max_steps` lowers the ceiling (Truestamp passes
-    32).
+    before any node is read or hashed; `:max_steps` lowers the ceiling (32 admits trees
+    of up to 2^32 entries).
   - **One encoding per proof**: the binary form has fixed-width fields and a path length
     the index and size determine.
 
@@ -222,8 +225,7 @@ defmodule Truestamp.Merkle do
   ## Options
 
     * `:max_steps` - the longest path accepted, an integer from 0 to #{@max_steps}.
-      Defaults to #{@max_steps}. Truestamp passes 32, which admits trees of up to 2^32
-      entries.
+      Defaults to #{@max_steps}. 32 admits trees of up to 2^32 entries.
 
   An unknown option, or a `:max_steps` outside that range, raises `ArgumentError`.
   Everything else may come from a stranger, so it is refused with an error instead of

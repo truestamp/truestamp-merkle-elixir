@@ -5,10 +5,12 @@ SPDX-License-Identifier: Apache-2.0
 
 # Known answers from other implementations
 
-Each file here holds the published Merkle known answers of a Go implementation of RFC 9162
-section 2.1 (the tree and inclusion proofs of RFC 6962), or, for `production-logs.json`,
-proofs published from production logs: roots, hashes, inclusion proofs, and the corrupted
-proofs the upstream tests reject.
+Each file here holds the Merkle known answers of a Go implementation of RFC 9162 section 2.1
+(the tree and inclusion proofs of RFC 6962): the roots, hashes and inclusion proofs its tests
+publish, the corrupted proofs they reject, and cases computed with the implementation's own
+functions from its tests' data (named `generated:`). `production-logs.json` holds other
+published data instead: inclusion proofs from Rekor's production log, the tessera and
+serverless-log test log, and ics23's test vectors.
 
 `test/truestamp/merkle/interop_test.exs` checks the library against every tree root, every
 inclusion verdict, every node hash, and, for every accepted proof whose tree is in the file,
@@ -26,7 +28,7 @@ each file's Go program, below.
 | `certificate-transparency-go.json` | github.com/google/certificate-transparency-go/merkletree | v1.0.16 | Apache-2.0 | 9 | 130 | 16 |
 | `codenotary-merkletree.json` | github.com/codenotary/merkletree | v0.1.2 | Apache-2.0 | 68 | 1,549 | 65 |
 | `sigsum-go.json` | sigsum.org/sigsum-go | v0.14.1 | BSD-2-Clause | 108 | 1,638 | 100 |
-| `production-logs.json` | proofs from production logs: sigstore-go and sigstore-conformance (Rekor), rekor, rekor-tiles, tessera and serverless-log, ics23 | per source, in the file | Apache-2.0 | 18 | 420 | 1,340,288,195 |
+| `production-logs.json` | Rekor proofs (via sigstore-go, sigstore-conformance, rekor, rekor-tiles), the tessera and serverless-log test log, ics23 test vectors | per source, in the file | Apache-2.0 | 18 | 420 | 1,340,288,195 |
 
 The largest tree size is the largest in a tree or a proof; the largest trees built from their
 leaves have 65,535 entries (transparency-dev). Every implementation agrees with RFC 9162 on
