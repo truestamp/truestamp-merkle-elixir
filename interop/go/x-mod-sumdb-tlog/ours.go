@@ -62,10 +62,11 @@ const (
 	// oursLaxAccepted is how many in-scope walk_refusals cases tlog.CheckRecord
 	// may accept. Any other count fails, so a change in either side is caught.
 	oursLaxAccepted = 0
-	// oursSkippedAccepts is how many walk_accepts cases tlog cannot take:
-	// "64 steps under the default cap", whose tree_size 2^64 - 1 does not fit
-	// int64.
-	oursSkippedAccepts = 1
+	// oursSkippedAccepts is how many walk_accepts cases tlog cannot take, because
+	// their tree_size does not fit int64: "64 steps under the default cap",
+	// "the last of 2^63 + 1 entries", "index 2^64 - 2 of 2^64 - 1 entries" and
+	// "index 2^63 - 1 of 2^64 - 1 entries".
+	oursSkippedAccepts = 4
 	// oursSkippedRefusals is how many in-scope walk_refusals cases tlog cannot
 	// take: "the path length is checked before any node", whose path node
 	// "bad" is not hex.

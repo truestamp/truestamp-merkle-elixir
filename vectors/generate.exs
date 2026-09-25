@@ -158,10 +158,13 @@ defmodule MerkleVectors do
   end
 
   # Listed out of byte order, so a port must sort: upper and lower case, punctuation,
-  # digits that sort differently as text than as numbers, the longest key allowed, and
-  # two keys that share a digest.
+  # digits that sort differently as text than as numbers, a key that is a prefix of
+  # others ("a" before "a-", "a.", "a0" and "a_"), the longest key allowed, and two keys
+  # that share a digest.
   defp mixed_entries do
-    keys = ["b", "B", "A", "_x", "-x", ".x", "a", "a0", "10", "9", String.duplicate("k", 36)]
+    keys =
+      ["b", "a_", "B", "A", "_x", "a.", "-x", ".x", "a", "a-", "a0", "10", "9"] ++
+        [String.duplicate("k", 36)]
 
     for {key, i} <- Enum.with_index(keys, 1) do
       digest = if key in ["B", "_x"], do: digest_of("shared"), else: digest_of("mixed#{i}")
@@ -193,20 +196,63 @@ defmodule MerkleVectors do
       {"last of seven", 6, 7, nodes(2, "s"), 64},
       {"32 steps under a cap of 32", 0, Bitwise.bsl(1, 32), nodes(32, "s"), 32},
       {"64 steps under the default cap", 0, 0xFFFF_FFFF_FFFF_FFFF, nodes(64, "s"), 64},
-      {"a size-3 path claimed at size 4 reaches the size-3 root", 0, 4, size3_path, 64}
+      {"a size-3 path claimed at size 4 reaches the size-3 root", 0, 4, size3_path, 64},
+      # Indexes with high bits set, so a verifier's index arithmetic must hold all 64
+      # bits: each of the first two walks shifts the index right by 40 and 63 places at
+      # once, and the last two take 63 and 64 steps at the largest tree size.
+      {"the last of 2^40 + 1 entries", pow2(40), pow2(40) + 1,
+       reaching(d, pow2(40), pow2(40) + 1), 64},
+      {"the last of 2^63 + 1 entries", pow2(63), pow2(63) + 1,
+       reaching(d, pow2(63), pow2(63) + 1), 64},
+      {"index 2^64 - 2 of 2^64 - 1 entries", pow2(64) - 2, pow2(64) - 1,
+       reaching(d, pow2(64) - 2, pow2(64) - 1), 64},
+      {"index 2^63 - 1 of 2^64 - 1 entries", pow2(63) - 1, pow2(64) - 1,
+       reaching(d, pow2(63) - 1, pow2(64) - 1), 64},
+      # The cap limits a path's length, never the tree size a proof states.
+      {"a one-node path at size 2^32 + 1 under a cap of 1", pow2(32), pow2(32) + 1,
+       reaching(d, pow2(32), pow2(32) + 1), 1}
     ]
     |> Enum.map(fn {name, index, size, path, cap} ->
       digest = if String.starts_with?(name, "a size-3"), do: hd(three), else: d
-      root = walk(digest, index, size, path)
+      accept(name, digest, proof_obj(index, size, path), index, size, path, cap)
+    end)
+    |> Enum.concat([
+      # A proof object's other members are ignored.
+      accept(
+        "a proof with another member",
+        d,
+        obj([
+          {"leaf_index", 2},
+          {"tree_size", 3},
+          {"path", Enum.map(nodes(1, "s"), &hex/1)},
+          {"note", "ignored"}
+        ]),
+        2,
+        3,
+        nodes(1, "s"),
+        64
+      )
+    ])
+  end
 
-      obj([
-        {"name", name},
-        {"digest", hex(digest)},
-        {"proof", proof_obj(index, size, path)},
-        {"max_steps", cap},
-        {"root", hex(root)},
-        {"binary_hex", hex(binary(index, size, path))}
-      ])
+  defp accept(name, digest, proof, index, size, path, cap) do
+    obj([
+      {"name", name},
+      {"digest", hex(digest)},
+      {"proof", proof},
+      {"max_steps", cap},
+      {"root", hex(walk(digest, index, size, path))},
+      {"binary_hex", hex(binary(index, size, path))}
+    ])
+  end
+
+  defp pow2(k), do: Bitwise.bsl(1, k)
+
+  # Arbitrary nodes, as many as the RFC's loop takes for this index and size.
+  defp reaching(digest, index, size) do
+    Enum.find_value(0..64, fn count ->
+      path = nodes(count, "h")
+      if walk(digest, index, size, path) != :fail, do: path
     end)
   end
 
@@ -217,40 +263,59 @@ defmodule MerkleVectors do
     [s1, s2, s3] = Enum.map(nodes(3, "s"), &hex/1)
     good = proof_obj(0, 3, [s1, s2] |> Enum.map(&unhex/1))
 
-    [
-      {"uppercase digest", String.upcase(d), good, 64, "invalid_leaf"},
-      {"digest with a trailing newline", d <> "\n", good, 64, "invalid_leaf"},
-      {"63-character digest", binary_part(d, 0, 63), good, 64, "invalid_leaf"},
-      {"leaf_index below 0", d, raw(-1, 3, [s1, s2]), 64, "invalid_proof"},
-      {"tree_size 0", d, raw(0, 0, []), 64, "invalid_proof"},
-      {"tree_size past 2^64 - 1", d, raw(0, 18_446_744_073_709_551_616, []), 64, "invalid_proof"},
-      {"leaf_index as a string", d, raw("0", 3, [s1, s2]), 64, "invalid_proof"},
-      {"no path member", d, obj([{"leaf_index", 0}, {"tree_size", 3}]), 64, "invalid_proof"},
-      {"leaf_index equal to tree_size", d, raw(3, 3, [s1, s2]), 64, "index_out_of_range"},
-      {"leaf_index past tree_size", d, raw(9, 3, [s1, s2]), 64, "index_out_of_range"},
-      {"a 33-step path under a cap of 32", d, raw(0, Bitwise.bsl(1, 33), []), 32,
-       "too_many_steps"},
-      {"a whole 3-step path under a cap of 2", d, raw(0, 7, [s1, s2, s3]), 2, "too_many_steps"},
-      {"one node short", d, raw(0, 3, [s1]), 64, "wrong_path_length"},
-      {"one node extra", d, raw(0, 3, [s1, s2, s1]), 64, "wrong_path_length"},
-      {"no nodes for two entries", d, raw(0, 2, []), 64, "wrong_path_length"},
-      {"a node for one entry", d, raw(0, 1, [s1]), 64, "wrong_path_length"},
-      {"path that is not a list", d, raw(0, 3, "not a list"), 64, "invalid_proof"},
-      {"uppercase node", d, raw(0, 3, [String.upcase(s1), s2]), 64, "invalid_node"},
-      {"node with a trailing newline", d, raw(0, 3, [s1 <> "\n", s2]), 64, "invalid_node"},
-      {"63-character node", d, raw(0, 3, [binary_part(s1, 0, 63), s2]), 64, "invalid_node"},
-      {"node with a two-character prefix", d, raw(0, 3, ["l:" <> s1, s2]), 64, "invalid_node"},
-      {"the digest is checked before the proof", "bad", raw(9, 3, []), 64, "invalid_leaf"},
-      {"the digest is checked before the proof's ranges", "bad", raw(0, 0, []), 64,
-       "invalid_leaf"},
-      {"the path's type is checked before the index", d, raw(9, 3, "not a list"), 64,
-       "invalid_proof"},
-      {"the index is checked before the step cap", d,
-       raw(Bitwise.bsl(1, 40) - 1, Bitwise.bsl(1, 40) - 1, []), 32, "index_out_of_range"},
-      {"the index is checked before the path length", d, raw(3, 3, []), 64, "index_out_of_range"},
-      {"the path length is checked before any node", d, raw(0, 3, ["bad"]), 64,
-       "wrong_path_length"}
-    ]
+    ([
+       {"uppercase digest", String.upcase(d), good, 64, "invalid_leaf"},
+       {"digest with a trailing newline", d <> "\n", good, 64, "invalid_leaf"},
+       {"63-character digest", binary_part(d, 0, 63), good, 64, "invalid_leaf"},
+       {"leaf_index below 0", d, raw(-1, 3, [s1, s2]), 64, "invalid_proof"},
+       {"tree_size 0", d, raw(0, 0, []), 64, "invalid_proof"},
+       {"tree_size past 2^64 - 1", d, raw(0, 18_446_744_073_709_551_616, []), 64,
+        "invalid_proof"},
+       {"leaf_index as a string", d, raw("0", 3, [s1, s2]), 64, "invalid_proof"},
+       {"no path member", d, obj([{"leaf_index", 0}, {"tree_size", 3}]), 64, "invalid_proof"},
+       {"leaf_index equal to tree_size", d, raw(3, 3, [s1, s2]), 64, "index_out_of_range"},
+       {"leaf_index past tree_size", d, raw(9, 3, [s1, s2]), 64, "index_out_of_range"},
+       {"a 33-step path under a cap of 32", d, raw(0, Bitwise.bsl(1, 33), []), 32,
+        "too_many_steps"},
+       {"a whole 3-step path under a cap of 2", d, raw(0, 7, [s1, s2, s3]), 2, "too_many_steps"},
+       {"one node short", d, raw(0, 3, [s1]), 64, "wrong_path_length"},
+       {"one node extra", d, raw(0, 3, [s1, s2, s1]), 64, "wrong_path_length"},
+       {"no nodes for two entries", d, raw(0, 2, []), 64, "wrong_path_length"},
+       {"a node for one entry", d, raw(0, 1, [s1]), 64, "wrong_path_length"},
+       {"path that is not a list", d, raw(0, 3, "not a list"), 64, "invalid_proof"},
+       {"uppercase node", d, raw(0, 3, [String.upcase(s1), s2]), 64, "invalid_node"},
+       {"node with a trailing newline", d, raw(0, 3, [s1 <> "\n", s2]), 64, "invalid_node"},
+       {"63-character node", d, raw(0, 3, [binary_part(s1, 0, 63), s2]), 64, "invalid_node"},
+       {"node with a two-character prefix", d, raw(0, 3, ["l:" <> s1, s2]), 64, "invalid_node"},
+       {"the digest is checked before the proof", "bad", raw(9, 3, []), 64, "invalid_leaf"},
+       {"the digest is checked before the proof's ranges", "bad", raw(0, 0, []), 64,
+        "invalid_leaf"},
+       {"the path's type is checked before the index", d, raw(9, 3, "not a list"), 64,
+        "invalid_proof"},
+       {"the index is checked before the step cap", d,
+        raw(Bitwise.bsl(1, 40) - 1, Bitwise.bsl(1, 40) - 1, []), 32, "index_out_of_range"},
+       {"the index is checked before the path length", d, raw(3, 3, []), 64,
+        "index_out_of_range"},
+       {"the path length is checked before any node", d, raw(0, 3, ["bad"]), 64,
+        "wrong_path_length"},
+       {"one node short at a high index", d, raw(pow2(40), pow2(40) + 1, []), 64,
+        "wrong_path_length"},
+       {"leaf_index and tree_size past 2^64 - 1", d, raw(pow2(64) + 1, pow2(64), []), 64,
+        "invalid_proof"},
+       {"leaf_index equal to a tree_size past 2^64 - 1", d, raw(pow2(64), pow2(64), []), 64,
+        "invalid_proof"},
+       {"a node that is null", d, raw(0, 3, [s1, nil]), 64, "invalid_node"},
+       {"a node that is a number", d, raw(0, 3, [s1, 7]), 64, "invalid_node"}
+     ] ++
+       for(
+         {label, tail} <- non_hex_tails(),
+         refusal <- [
+           {"64-character digest ending in #{label}", non_hex(d, tail), good, 64, "invalid_leaf"},
+           {"64-character node ending in #{label}", d, raw(0, 3, [s1, non_hex(s2, tail)]), 64,
+            "invalid_node"}
+         ],
+         do: refusal
+       ))
     |> Enum.map(fn {name, digest, proof, cap, error} ->
       obj([
         {"name", name},
@@ -292,21 +357,39 @@ defmodule MerkleVectors do
     other = hex(digest_of("other"))
     e = fn key, digest -> obj([{"key", key}, {"digest", digest}]) end
 
-    [
-      {"key of 37 characters", [e.(String.duplicate("k", 37), good)]},
-      {"empty key", [e.("", good)]},
-      {"key with a space", [e.("a b", good)]},
-      {"key with a leading space", [e.(" a", good)]},
-      {"key with a character outside the set", [e.("a/b", good)]},
-      {"key with a non-ASCII character", [e.("é", good)]},
-      {"the same key twice, same digest", [e.("a", good), e.("a", good)]},
-      {"the same key twice, different digests", [e.("a", good), e.("a", other)]},
-      {"uppercase digest", [e.("a", String.upcase(good))]},
-      {"63-character digest", [e.("a", binary_part(good, 0, 63))]},
-      {"65-character digest", [e.("a", good <> "0")]}
-    ]
+    ([
+       {"key of 37 characters", [e.(String.duplicate("k", 37), good)]},
+       {"empty key", [e.("", good)]},
+       {"key with a space", [e.("a b", good)]},
+       {"key with a leading space", [e.(" a", good)]},
+       {"key with a character outside the set", [e.("a/b", good)]},
+       {"key with a non-ASCII character", [e.("é", good)]},
+       {"the same key twice, same digest", [e.("a", good), e.("a", good)]},
+       {"the same key twice, different digests", [e.("a", good), e.("a", other)]},
+       {"uppercase digest", [e.("a", String.upcase(good))]},
+       {"63-character digest", [e.("a", binary_part(good, 0, 63))]},
+       {"65-character digest", [e.("a", good <> "0")]}
+     ] ++
+       for(
+         {label, tail} <- non_hex_tails(),
+         do: {"64-character digest ending in #{label}", [e.("a", non_hex(good, tail))]}
+       ) ++
+       for(
+         char <- [":", "@", "[", "\\", "]", "^", "`", "{", ",", "+"],
+         do: {"key with #{char}, next to the allowed characters", [e.("a" <> char <> "b", good)]}
+       ))
     |> Enum.map(fn {name, entries} -> obj([{"name", name}, {"entries", entries}]) end)
   end
+
+  # Values of exactly 64 characters whose last one or two are not lowercase hex: a
+  # decoder that skips whitespace or stops at the first bad pair would accept them, and
+  # the four single characters sit just outside the ranges 0-9 and a-f.
+  defp non_hex_tails do
+    [{"g", "g"}, {"/", "/"}, {":", ":"}, {"a backtick", "`"}, {"two spaces", "  "}] ++
+      [{"zz", "zz"}, {"a NUL", <<0>>}]
+  end
+
+  defp non_hex(hex, tail), do: binary_part(hex, 0, 64 - byte_size(tail)) <> tail
 
   defp document do
     obj([
@@ -354,10 +437,11 @@ defmodule MerkleVectors do
   end
 
   defp emit(value, _indent) when is_binary(value) or is_integer(value), do: JSON.encode!(value)
+  defp emit(nil, _indent), do: "null"
 
   defp member({key, value}, indent), do: [JSON.encode!(key), ": ", emit(value, indent)]
 
-  defp scalar?(value), do: is_binary(value) or is_integer(value)
+  defp scalar?(value), do: is_binary(value) or is_integer(value) or is_nil(value)
 end
 
 MerkleVectors.main(System.argv())

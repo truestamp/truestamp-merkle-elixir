@@ -23,6 +23,15 @@ defmodule Truestamp.Merkle.PathTest do
 
   defp hash_hex(label), do: RFC9162.hex(RFC9162.sha256(label))
 
+  # 64-character values whose last one or two characters are not lowercase hex: the four
+  # characters just outside 0-9 and a-f, whitespace, and a NUL. The bad character comes
+  # last, so a check that stops early cannot pass them.
+  defp non_hex(hex) do
+    for tail <- ["g", "/", ":", "`", "  ", "zz", <<0>>] do
+      binary_part(hex, 0, 64 - byte_size(tail)) <> tail
+    end
+  end
+
   describe "proof/2" do
     test "every proof in trees of 1 to 130 entries is the RFC's audit path" do
       for n <- 1..130 do
@@ -160,13 +169,14 @@ defmodule Truestamp.Merkle.PathTest do
     end
 
     test "a digest that is not 64 lowercase hex characters", %{proof: proof} do
-      for bad <- [
-            String.duplicate("A", 64),
-            String.duplicate("a", 63),
-            String.duplicate("a", 64) <> "\n",
-            nil,
-            7
-          ] do
+      for bad <-
+            [
+              String.duplicate("A", 64),
+              String.duplicate("a", 63),
+              String.duplicate("a", 64) <> "\n",
+              nil,
+              7
+            ] ++ non_hex(String.duplicate("a", 64)) do
         assert Merkle.walk(bad, proof) == {:error, :invalid_leaf}, inspect(bad)
       end
     end
@@ -182,6 +192,17 @@ defmodule Truestamp.Merkle.PathTest do
             %{leaf_index: -1, tree_size: 1, path: []},
             %{leaf_index: 0, tree_size: 0, path: []},
             %{leaf_index: 0, tree_size: 18_446_744_073_709_551_616, path: []},
+            # A size past 2^64 - 1 is refused before the index is compared with it.
+            %{
+              leaf_index: 18_446_744_073_709_551_617,
+              tree_size: 18_446_744_073_709_551_616,
+              path: []
+            },
+            %{
+              leaf_index: 18_446_744_073_709_551_616,
+              tree_size: 18_446_744_073_709_551_616,
+              path: []
+            },
             %{leaf_index: 0.0, tree_size: 1, path: []},
             %{leaf_index: 0, tree_size: 3, path: "not a list"},
             %{leaf_index: 0, tree_size: 3, path: nil}
@@ -241,14 +262,16 @@ defmodule Truestamp.Merkle.PathTest do
     test "a node that is not 64 lowercase hex characters", %{digest: digest, proof: proof} do
       [first] = proof.path
 
-      for bad <- [
-            String.upcase(first),
-            first <> "\n",
-            binary_part(first, 0, 63),
-            "r:" <> first,
-            :atom,
-            7
-          ] do
+      for bad <-
+            [
+              String.upcase(first),
+              first <> "\n",
+              binary_part(first, 0, 63),
+              "r:" <> first,
+              :atom,
+              7,
+              nil
+            ] ++ non_hex(first) do
         assert Merkle.walk(digest, %{proof | path: [bad]}) == {:error, :invalid_node},
                inspect(bad)
       end
@@ -290,7 +313,8 @@ defmodule Truestamp.Merkle.PathTest do
     test "verify/4 is false for a root that is not 64 lowercase hex characters", ctx do
       %{digest: digest, proof: proof, root: root} = ctx
 
-      for bad <- [String.upcase(root), root <> "\n", binary_part(root, 0, 63), nil] do
+      for bad <-
+            [String.upcase(root), root <> "\n", binary_part(root, 0, 63), nil] ++ non_hex(root) do
         refute Merkle.verify(digest, proof, bad), inspect(bad)
       end
     end

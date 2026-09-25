@@ -20,8 +20,11 @@ defmodule Truestamp.Merkle.VectorsTest do
   defp entries(tree),
     do: Enum.map(tree["entries"], &%{"key" => &1["key"], "hash" => &1["digest"]})
 
-  # A JSON proof object as the library takes it. Anything else is passed as it stands.
-  defp to_proof(%{} = json), do: Map.new(json, fn {key, value} -> {@fields[key], value} end)
+  # A JSON proof object as the library takes it: the three fields as atoms, any other
+  # member kept under its own name. Anything else is passed as it stands.
+  defp to_proof(%{} = json),
+    do: Map.new(json, fn {key, value} -> {Map.get(@fields, key, key), value} end)
+
   defp to_proof(other), do: other
 
   test "every section the tests loop over has cases, so no loop can pass empty" do
@@ -92,9 +95,11 @@ defmodule Truestamp.Merkle.VectorsTest do
         assert Merkle.walk(digest, proof, max_steps: cap) == {:ok, root}
         assert Merkle.verify(digest, proof, root, max_steps: cap)
 
+        # The binary form holds the three fields alone.
+        fields = Map.take(proof, Map.values(@fields))
         bytes = Base.decode16!(@accept["binary_hex"], case: :lower)
         assert Merkle.proof_to_binary(proof) == bytes
-        assert Merkle.proof_from_binary(bytes) == {:ok, proof}
+        assert Merkle.proof_from_binary(bytes) == {:ok, fields}
       end
     end
 

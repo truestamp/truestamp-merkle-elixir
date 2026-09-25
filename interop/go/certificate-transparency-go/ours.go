@@ -59,12 +59,14 @@ import (
 )
 
 // Pinned counts for the library's vectors/merkle.json. The module accepts no
-// in-scope refusal. One walk_accepts case ("64 steps under the default cap",
-// tree_size 2^64 - 1) does not fit int64, and one in-scope walk_refusals case
-// ("the path length is checked before any node") has the path node "bad".
+// in-scope refusal. Four walk_accepts cases have a tree_size that does not fit
+// int64 ("64 steps under the default cap", "the last of 2^63 + 1 entries",
+// "index 2^64 - 2 of 2^64 - 1 entries" and "index 2^63 - 1 of 2^64 - 1
+// entries"), and one in-scope walk_refusals case ("the path length is checked
+// before any node") has the path node "bad".
 const (
 	oursLaxAccepted     = 0
-	oursSkippedAccepts  = 1
+	oursSkippedAccepts  = 4
 	oursSkippedRefusals = 1
 )
 

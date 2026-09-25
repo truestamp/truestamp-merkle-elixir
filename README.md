@@ -171,6 +171,12 @@ lowercase hex throughout. The file's sections:
 - `binary_refusals`: binary forms the decoder must refuse, as `binary_hex`, with the
   `error` it names.
 
+Two things a port gets wrong easily. Some integers in the file reach 2^64, past what a
+double holds exactly, so read it with a JSON parser that keeps 64-bit integers exact; each
+accepted proof's `binary_hex` is also an exact form. And check every character of a hex
+value before decoding it: common decoders skip whitespace or stop at the first bad pair,
+and the refusals include 64-character values that only such a check rejects.
+
 The values below are a summary of that file.
 
 **Small trees.** `n` entries with keys `key01` through `keyNN` and digests
@@ -194,8 +200,9 @@ its binary form is 48 bytes:
 `00000000000000000000000000000002d78acbc356fa171ce40bb72ffa74cbde06c36aefc2678a9af18d3975581e969f`.
 In the three-entry tree, `key03` is the unpaired leaf, so its path is the single node
 over the first two entries, which is the two-entry tree's root. The vectors file has
-every entry's proof for n = 1 to 8 and for an 11-entry tree listed out of byte order, with
-two keys sharing a digest, and three proofs in the tree below.
+every entry's proof for n = 1 to 8 and for a 14-entry tree listed out of byte order, with
+a key that is a prefix of four others and two keys sharing a digest, and three proofs in
+the tree below.
 
 **A larger tree.** 300 entries with keys `lk0001` through `lk0300` and digests
 `SHA-256("bigleaf<i>")` have the root
