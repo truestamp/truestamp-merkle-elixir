@@ -11,6 +11,15 @@ defmodule Truestamp.Merkle.Input do
 
   @max_key_length 36
 
+  @doc """
+  Checks every entry of a list against the entry rules and returns `:ok`, or raises
+  `ArgumentError` naming the first entry that breaks one.
+
+  An entry is a map with a `"key"` of 1 to 36 characters, each an ASCII letter, a digit,
+  `.`, `_` or `-`, and a `"hash"` of exactly 64 lowercase hex characters. Whether keys
+  repeat is checked where the tree is built, not here.
+  """
+  @spec validate_entries!([term()]) :: :ok
   def validate_entries!(entries), do: Enum.each(entries, &validate_entry!/1)
 
   defp validate_entry!(%{"key" => key, "hash" => digest}) do

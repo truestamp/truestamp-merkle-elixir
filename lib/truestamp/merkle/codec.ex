@@ -18,6 +18,12 @@ defmodule Truestamp.Merkle.Codec do
 
   @digest_bytes Hash.digest_bytes()
 
+  @doc """
+  Encodes an inclusion proof as its binary form. Raises `ArgumentError` for a proof that
+  `Truestamp.Merkle.walk/3` would refuse at its default step cap.
+  `Truestamp.Merkle.proof_to_binary/1` documents the contract.
+  """
+  @spec proof_to_binary(Truestamp.Merkle.proof()) :: binary()
   def proof_to_binary(proof) do
     with {:ok, _length} <- Paths.check_proof(proof, Paths.max_steps()),
          {:ok, siblings} <- siblings(proof.path, []) do
@@ -30,6 +36,12 @@ defmodule Truestamp.Merkle.Codec do
     end
   end
 
+  @doc """
+  Decodes the binary form of an inclusion proof, accepting only the canonical form and
+  never raising. `Truestamp.Merkle.proof_from_binary/1` documents the contract.
+  """
+  @spec proof_from_binary(term()) ::
+          {:ok, Truestamp.Merkle.proof()} | {:error, Truestamp.Merkle.decode_error()}
   # Checks run in this order: a binary at all, room for the two fields, the index
   # below the size, then the path's length.
   def proof_from_binary(<<index::unsigned-big-64, size::unsigned-big-64, path::binary>>) do

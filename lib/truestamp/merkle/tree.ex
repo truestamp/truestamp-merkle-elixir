@@ -17,6 +17,11 @@ defmodule Truestamp.Merkle.Tree do
   # long before that.
   @max_depth 40
 
+  @doc """
+  Builds a tree from a list of entries. `Truestamp.Merkle.new/2` documents the entry
+  rules, the options and what raises.
+  """
+  @spec new(term(), term()) :: Merkle.t()
   def new(entries, opts) do
     sort? = sort_option!(opts)
     build(entries, sort?)
@@ -68,9 +73,15 @@ defmodule Truestamp.Merkle.Tree do
     }
   end
 
-  # The levels over leaf hashes already in leaf order, bottom first, each a tuple; the last
-  # holds the root. Every tree is built here, and the interop tests call it with other
-  # implementations' leaf hashes, which need not be hashes of 32-byte digests.
+  @doc """
+  The levels of the RFC 9162 tree over leaf hashes already in leaf order, bottom first,
+  each a tuple; the last holds the root alone. No leaves give one level holding the empty
+  root.
+
+  Every tree is built here, and the interop tests call it with other implementations'
+  leaf hashes, which need not be hashes of 32-byte digests.
+  """
+  @spec levels([binary()]) :: [tuple(), ...]
   def levels([]), do: [{Hash.empty_root()}]
   def levels([_ | _] = leaf_hashes), do: build_levels(leaf_hashes, [])
 

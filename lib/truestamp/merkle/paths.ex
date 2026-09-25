@@ -23,12 +23,23 @@ defmodule Truestamp.Merkle.Paths do
 
   @digest_hex_chars Hash.digest_hex_chars()
 
+  @doc "The default, and largest, `:max_steps`: 64, enough for any 64-bit tree size."
+  @spec max_steps() :: pos_integer()
   def max_steps, do: @max_steps
+
+  @doc "The largest `tree_size` a proof may state: 2^64 - 1, what the binary form holds."
+  @spec max_tree_size() :: pos_integer()
   def max_tree_size, do: @max_tree_size
 
-  # The audit path for the leaf at `index` (RFC 9162 section 2.1.3.1), bottom to top.
-  # Levels are tuples, so each sibling is one elem/2 away. A node with no right-hand
-  # sibling at some level is carried up unchanged and contributes no step there.
+  @doc """
+  The audit path of the leaf at `index` (RFC 9162 section 2.1.3.1), bottom to top, as
+  64-character lowercase hex.
+
+  `levels` are the tree's levels as `Truestamp.Merkle.Tree.levels/1` builds them. Each
+  level is a tuple, so each sibling is one `elem/2` away. A node with no right-hand
+  sibling at some level is carried up unchanged and contributes no node there.
+  """
+  @spec audit_path([tuple()], non_neg_integer()) :: [String.t()]
   def audit_path(levels, index) do
     {path, _index} =
       levels
@@ -47,6 +58,12 @@ defmodule Truestamp.Merkle.Paths do
     Enum.reverse(path)
   end
 
+  @doc """
+  The root an inclusion proof implies for a digest, or the check that refused it.
+  `Truestamp.Merkle.walk/3` documents the contract and the order of the checks.
+  """
+  @spec walk(term(), term(), keyword()) ::
+          {:ok, String.t()} | {:error, Truestamp.Merkle.walk_error()}
   def walk(leaf_hex, proof, opts) do
     max_steps = max_steps!(opts)
 
@@ -55,6 +72,11 @@ defmodule Truestamp.Merkle.Paths do
     end
   end
 
+  @doc """
+  Whether an inclusion proof reaches `root_hex` from a digest, compared in constant time.
+  `Truestamp.Merkle.verify/4` documents the contract.
+  """
+  @spec verify(term(), term(), term(), keyword()) :: boolean()
   def verify(leaf_hex, proof, root_hex, opts) do
     max_steps = max_steps!(opts)
 
@@ -69,8 +91,15 @@ defmodule Truestamp.Merkle.Paths do
     end
   end
 
-  # Checks a proof's shape, index, size and path length without reading a single path
-  # element, so the codec can apply the same rules. Returns the expected path length.
+  @doc """
+  Checks a proof's shape, index, size and path length, in `Truestamp.Merkle.walk/3`'s
+  order, without reading a single path element, so the codec applies the same rules.
+  Returns `{:ok, length}`, the number of nodes the index and size require, or the first
+  refusal.
+  """
+  @spec check_proof(term(), non_neg_integer()) ::
+          {:ok, non_neg_integer()}
+          | {:error, :invalid_proof | :index_out_of_range | :too_many_steps | :wrong_path_length}
   def check_proof(%{leaf_index: index, tree_size: size, path: path}, max_steps)
       when is_integer(index) and is_integer(size) and is_list(path) do
     cond do
@@ -88,15 +117,21 @@ defmodule Truestamp.Merkle.Paths do
 
   def check_proof(_not_a_proof, _max_steps), do: {:error, :invalid_proof}
 
-  # Exactly 64 lowercase hex characters. Returns the sibling's raw 32 bytes.
+  @doc """
+  A path node's raw 32 bytes, if it is exactly 64 lowercase hex characters, or `:error`.
+  """
+  @spec parse_node(term()) :: {:ok, <<_::256>>} | :error
   def parse_node(<<hex::binary-size(@digest_hex_chars)>>) do
     if Hash.lowercase_hex?(hex), do: {:ok, Hash.from_hex!(hex)}, else: :error
   end
 
   def parse_node(_node), do: :error
 
-  # The number of path elements RFC 9162 section 2.1.3.2's loop consumes for this index
-  # and size: one per iteration, until sn reaches 0.
+  @doc """
+  The number of path nodes RFC 9162 section 2.1.3.2's loop consumes for this index and
+  size: one per iteration, until `sn` reaches 0. The size must be at least 1.
+  """
+  @spec path_length(non_neg_integer(), pos_integer()) :: non_neg_integer()
   def path_length(index, size) when is_integer(size) and size >= 1,
     do: path_length(index, size - 1, 0)
 
@@ -113,9 +148,15 @@ defmodule Truestamp.Merkle.Paths do
     end
   end
 
-  # Section 2.1.3.2 from a 32-byte leaf hash, whatever data it was taken over. walk/3 and
-  # verify/4 come through here once the digest is checked, and the interop tests call it
-  # with other implementations' leaf hashes. Returns the root's raw bytes.
+  @doc """
+  RFC 9162 section 2.1.3.2 from a 32-byte leaf hash, whatever data it was taken over,
+  returning the root's raw bytes or the first refusal.
+
+  `walk/3` and `verify/4` come through here once the digest is checked, and the interop
+  tests call it with other implementations' leaf hashes. `max_steps` is taken as given.
+  """
+  @spec walk_leaf_hash(<<_::256>>, term(), non_neg_integer()) ::
+          {:ok, <<_::256>>} | {:error, Truestamp.Merkle.walk_error()}
   def walk_leaf_hash(<<_::binary-size(32)>> = leaf_hash, proof, max_steps) do
     with {:ok, _length} <- check_proof(proof, max_steps),
          {:ok, siblings} <- parse_path(proof.path, []) do
