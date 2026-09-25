@@ -14,7 +14,9 @@ permissions:
 jobs:
   test:
     name: Test (OTP ${{ matrix.otp }})
-    runs-on: ubuntu-latest
+    # Pinned: mise finds prebuilt Erlang for Ubuntu 20.04, 22.04 and 24.04, and
+    # ubuntu-latest moves to a release it does not map.
+    runs-on: ubuntu-24.04
 
     # Every gate on the last several OTP releases: the versions pinned in .tool-versions,
     # and each earlier OTP that Elixir 1.20 supports, with Elixir 1.20.1 built for it.
@@ -32,6 +34,9 @@ jobs:
 
     env:
       MIX_ENV: test
+      # Prebuilt Erlang only (builds.hex.pm): mise fails rather than compile from source.
+      # Elixir always comes prebuilt.
+      MISE_ERLANG_COMPILE: "false"
 
     steps:
       - name: Checkout
@@ -49,7 +54,8 @@ jobs:
         # the interop programs in interop/go/.
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
-          cache_key_prefix: mise-otp${{ matrix.otp }}-${{ matrix.erlang }}
+          version: 2026.9.13
+          cache_key_prefix: mise-prebuilt-otp${{ matrix.otp }}-${{ matrix.erlang }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 

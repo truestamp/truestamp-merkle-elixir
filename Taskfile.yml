@@ -30,7 +30,10 @@ tasks:
       - task: setup
 
   mise-install:
-    desc: Install the tool versions in .tool-versions (Erlang, Elixir, Go, task)
+    desc: Install the tool versions in .tool-versions (Erlang, Elixir, Go, task), prebuilt only
+    env:
+      # Fail rather than compile Erlang from source when no prebuilt build exists.
+      MISE_ERLANG_COMPILE: "false"
     cmds:
       - mise install
       - mise ls --current
