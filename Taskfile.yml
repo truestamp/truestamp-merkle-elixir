@@ -1,0 +1,147 @@
+# Copyright (c) 2025-2026 Truestamp, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# https://taskfile.dev
+#
+# Tool versions come from .tool-versions, which mise reads: Erlang, Elixir, Go (for the
+# interop programs in interop/go/) and this runner. `task bootstrap` installs them.
+
+version: "3"
+
+vars:
+  # The Go programs behind vectors/interop/*.json, one directory each.
+  GO_INTEROP_DIRS:
+    sh: ls -d interop/go/*/
+
+tasks:
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list-all
+
+  # ===========================================================================
+  # Setup
+  # ===========================================================================
+
+  bootstrap:
+    desc: First-time setup. Installs the tools in .tool-versions with mise, then runs setup.
+    cmds:
+      - task: mise-install
+      - task: setup
+
+  mise-install:
+    desc: Install the tool versions in .tool-versions (Erlang, Elixir, Go, task)
+    cmds:
+      - mise install
+      - mise ls --current
+
+  setup:
+    desc: Fetch Hex packages and the Go interop programs' modules
+    aliases: [deps]
+    cmds:
+      - mix local.hex --force --if-missing
+      - mix local.rebar --force --if-missing
+      - mix deps.get
+      - for: { var: GO_INTEROP_DIRS }
+        cmd: cd {{.ITEM}} && go mod download
+
+  # ===========================================================================
+  # Everyday
+  # ===========================================================================
+
+  compile:
+    desc: Compile, with warnings as errors (in :test, so test/support is covered)
+    env:
+      MIX_ENV: test
+    cmds:
+      - mix compile --warnings-as-errors
+
+  format:
+    desc: Format the Elixir sources
+    cmds:
+      - mix format
+
+  format-check:
+    desc: Fail if any Elixir source is not formatted, without changing it
+    cmds:
+      - mix format --check-formatted
+
+  credo:
+    desc: Run credo in strict mode
+    cmds:
+      - mix credo --strict
+
+  test:
+    desc: Run the test suite (no Go needed; reads the committed interop files)
+    cmds:
+      - mix test --warnings-as-errors {{.CLI_ARGS}}
+
+  test-go:
+    desc: Run the test suite and the Go interop programs (needs go)
+    aliases: [test-interop]
+    cmds:
+      - mix test --warnings-as-errors --include go_interop {{.CLI_ARGS}}
+
+  # ===========================================================================
+  # Known answers
+  # ===========================================================================
+
+  vectors:
+    desc: Rewrite vectors/merkle.json from vectors/generate.exs
+    cmds:
+      # Plain elixir, so the generator cannot load the library.
+      - elixir vectors/generate.exs
+
+  vectors-check:
+    desc: Fail if vectors/merkle.json differs from what vectors/generate.exs writes
+    cmds:
+      - elixir vectors/generate.exs --check
+
+  interop-write:
+    desc: Rebuild every vectors/interop/*.json file with its Go program
+    cmds:
+      - for: { var: GO_INTEROP_DIRS }
+        cmd: cd {{.ITEM}} && go run . -fixtures ../../../vectors/interop/$(basename {{.ITEM}}).json -write
+
+  # ===========================================================================
+  # Benchmarks and the demo
+  # ===========================================================================
+
+  bench:
+    desc: "Measure build, proof and verify times (other sizes: task bench SIZES=1000,10000)"
+    env:
+      MIX_ENV: prod
+    cmds:
+      # SIZES reaches the script only when given, so the script keeps its defaults.
+      - "{{if .SIZES}}SIZES={{.SIZES}} {{end}}mix run bench/performance.exs"
+
+  example:
+    desc: "Run examples/usage.exs: build a tree, prove an entry, verify it, store it"
+    aliases: [demo]
+    cmds:
+      - mix run examples/usage.exs
+
+  # ===========================================================================
+  # Gates
+  # ===========================================================================
+
+  precommit:
+    desc: "Format, then every gate CI runs: compile, credo, vectors, unused deps, tests with the Go programs"
+    cmds:
+      - task: format
+      - task: gates
+
+  ci:
+    desc: The CI gate. Like precommit, but checks formatting instead of changing files.
+    cmds:
+      - task: format-check
+      - task: gates
+
+  gates:
+    internal: true
+    cmds:
+      - task: compile
+      - task: credo
+      - task: vectors-check
+      - mix deps.unlock --check-unused
+      - task: test-go

@@ -18,6 +18,8 @@ defmodule Truestamp.LicenseHeaderTest do
   @patterns [
     "mix.exs",
     ".formatter.exs",
+    ".credo.exs",
+    "Taskfile.yml",
     "*.md",
     "{lib,test,bench,examples,vectors}/**/*.{ex,exs}",
     "{vectors,interop}/**/*.md",

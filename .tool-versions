@@ -1,3 +1,4 @@
 erlang 29.0.2
 elixir 1.20.1-otp-29
 go 1.26.8
+aqua:go-task/task 3.53.1

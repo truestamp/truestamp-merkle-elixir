@@ -118,8 +118,7 @@ defmodule ProofGenerationBenchmark do
     |> String.reverse()
     |> String.to_charlist()
     |> Enum.chunk_every(3)
-    |> Enum.map(&List.to_string/1)
-    |> Enum.join("_")
+    |> Enum.map_join("_", &List.to_string/1)
     |> String.reverse()
   end
 

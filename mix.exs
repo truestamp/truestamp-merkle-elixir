@@ -30,6 +30,7 @@ defmodule Truestamp.Merkle.MixProject do
 
   defp deps do
     [
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.0", only: :test}
     ]
   end

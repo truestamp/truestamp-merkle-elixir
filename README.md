@@ -244,9 +244,24 @@ random entries.
   size a large workload by memory before time.
 - Timings vary between runs by a few percent, and by more on a busy machine.
 
-Two more scripts cover the rest: `mix run bench/proof_generation_benchmark.exs` times
-proof generation in bulk, and `mix run examples/truestamp_merkle_demo.exs` walks through
-the API.
+`mix run bench/proof_generation_benchmark.exs` times proof generation in bulk.
+
+## Development
+
+`.tool-versions` pins the tools: Erlang, Elixir, Go (for the interop programs) and the
+[Task](https://taskfile.dev) runner. With [mise](https://mise.jdx.dev) installed,
+`mise install` puts them in place, and then:
+
+    task setup       fetch the Hex packages and the Go interop programs' modules
+    task test        run the test suite; it needs no Go
+    task test-go     run the suite and the Go interop programs
+    task precommit   format, then every gate CI runs: strict compile, credo, vectors,
+                     unused deps, and the tests with the Go interop programs
+    task example     run examples/usage.exs, the API from end to end
+    task bench       measure the performance table
+
+`task` lists the rest. CI runs `task ci`, the precommit gates with formatting checked
+instead of rewritten.
 
 ## License
 
