@@ -271,7 +271,7 @@ random entries.
     task bench       measure the performance table
 
 `task` lists the rest. CI runs `task ci`, the precommit gates with formatting checked
-instead of rewritten.
+instead of rewritten, on OTP 27, 28 and 29.
 
 ## License
 

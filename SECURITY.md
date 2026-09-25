@@ -227,5 +227,5 @@ a defense, and it should not appear in a security summary as though it were one.
 
 ## Platform requirements
 
-Elixir 1.20, and so OTP 27 or newer. Beyond that the module depends only on `:crypto`,
-`Base`, `Bitwise`, and the standard library.
+Elixir 1.20, and so OTP 27 or newer. CI runs every gate on OTP 27, 28 and 29. Beyond that
+the module depends only on `:crypto`, `Base`, `Bitwise`, and the standard library.
