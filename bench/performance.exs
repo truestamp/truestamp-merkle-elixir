@@ -1,11 +1,12 @@
 # Copyright (c) 2025-2026 Truestamp, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-# Measures building a tree, generating proofs and verifying them, and prints a
-# Markdown table. The README's performance table comes from this script.
+# Measures building a tree, generating proofs and verifying them. It prints an aligned
+# table with a note on each column; --markdown prints the README's table instead.
 #
-#     mix run bench/performance.exs
-#     SIZES=1000,10000 mix run bench/performance.exs
+#     mix run bench/performance.exs                      (task bench)
+#     mix run bench/performance.exs --markdown           (task bench -- --markdown)
+#     SIZES=1000,10000 mix run bench/performance.exs     (task bench SIZES=1000,10000)
 #
 # Timings are wall clock on one scheduler, and each runs in a fresh process so
 # no run inherits another run's heap. A build time is the median of three
@@ -21,18 +22,65 @@ defmodule Truestamp.Merkle.PerformanceBench do
   @max_measured_memory 100_000
   @proof_samples 10_000
 
+  # Column headings, and the width each takes in the aligned table.
+  @columns [
+    {"Entries", 9},
+    {"Depth", 5},
+    {"Build", 9},
+    {"Build rate", 11},
+    {"Tree memory", 11},
+    {"Proof", 8},
+    {"Verify", 8},
+    {"Proof size", 10}
+  ]
+
   def run do
+    format = format!(System.argv())
     sizes = sizes()
     warm_up()
     IO.puts(environment())
     IO.puts("")
 
-    IO.puts(
-      "| Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |"
-    )
+    case format do
+      :markdown ->
+        IO.puts("| " <> Enum.map_join(@columns, " | ", &elem(&1, 0)) <> " |")
+        IO.puts("|" <> Enum.map_join(@columns, "|", fn _ -> "---:" end) <> "|")
+        Enum.each(sizes, &IO.puts("| " <> Enum.join(row(&1), " | ") <> " |"))
 
-    IO.puts("|---:|---:|---:|---:|---:|---:|---:|---:|")
-    Enum.each(sizes, &IO.puts(row(&1)))
+      :text ->
+        IO.puts(aligned(Enum.map(@columns, &elem(&1, 0))))
+        IO.puts(aligned(Enum.map(@columns, fn {_, width} -> String.duplicate("-", width) end)))
+        Enum.each(sizes, &IO.puts(aligned(row(&1))))
+        IO.puts(notes())
+    end
+  end
+
+  defp format!([]), do: :text
+  defp format!(["--markdown"]), do: :markdown
+
+  defp format!(args) do
+    IO.puts(:stderr, "unknown arguments #{inspect(args)}; the only option is --markdown")
+    System.halt(1)
+  end
+
+  # Each cell right-aligned to its column's width, two spaces apart.
+  defp aligned(cells) do
+    cells
+    |> Enum.zip(@columns)
+    |> Enum.map_join("  ", fn {cell, {_, width}} -> String.pad_leading(cell, width) end)
+  end
+
+  defp notes do
+    """
+
+      Build        median of three builds of the tree from its entries, in one process
+      Build rate   entries per second at that median
+      Tree memory  the finished tree's heap size, counting a shared term once
+                   (1 KB = 1,024 bytes); "-" above #{format_int(@max_measured_memory)} entries
+      Proof        mean time of proof/2 over up to #{format_int(@proof_samples)} random entries
+      Verify       mean time of verify/4 over the same entries' proofs
+      Proof size   the binary form of the longest of those proofs: 16 bytes, and 32 per node
+    """
   end
 
   defp sizes do
@@ -77,22 +125,16 @@ defmodule Truestamp.Merkle.PerformanceBench do
 
     {longest, _} = Enum.max_by(proofs, fn {proof, _} -> length(proof.path) end)
 
-    Enum.join(
-      [
-        "",
-        format_int(n),
-        tree.tree_depth,
-        format_ms(build_us),
-        format_int(round(n / (build_us / 1_000_000))) <> "/s",
-        tree_memory(tree, n),
-        format_us(proof_us),
-        format_us(verify_us),
-        "#{byte_size(Merkle.proof_to_binary(longest))} B",
-        ""
-      ],
-      " | "
-    )
-    |> String.trim()
+    [
+      format_int(n),
+      Integer.to_string(tree.tree_depth),
+      format_ms(build_us),
+      format_int(round(n / (build_us / 1_000_000))) <> "/s",
+      tree_memory(tree, n),
+      format_us(proof_us),
+      format_us(verify_us),
+      "#{byte_size(Merkle.proof_to_binary(longest))} B"
+    ]
   end
 
   # Keys are fixed width so byte order equals numeric order; digests are the
@@ -146,6 +188,7 @@ defmodule Truestamp.Merkle.PerformanceBench do
   defp format_ms(us) when us >= 1_000_000, do: "#{Float.round(us / 1_000_000, 2)} s"
   defp format_ms(us), do: "#{Float.round(us / 1_000, 1)} ms"
 
+  # ASCII "us": Erlang writes latin1 when stdout is not a terminal.
   defp format_us(us), do: "#{Float.round(us, 1)} us"
 end
 

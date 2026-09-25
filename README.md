@@ -229,10 +229,12 @@ library's own vectors.
 
 ## Performance
 
-Measured with [`bench/performance.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs) (`task bench`, in the `prod` environment) on an Apple M3 Max
-with 64 GB, running Elixir 1.20.1 on OTP 29. A tree is built by one process; the build time
-is the median of three builds, and the proof and verify times are means over up to 10,000
-random entries.
+Measured with
+[`bench/performance.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs)
+(`task bench`, in the `prod` environment; `task bench -- --markdown` prints this table) on
+an Apple M3 Max with 64 GB, running Elixir 1.20.1 on OTP 29. A tree is built by one
+process; the build time is the median of three builds, and the proof and verify times are
+means over up to 10,000 random entries.
 
 | Entries | Depth | Build | Build rate | Tree memory | Proof | Verify | Proof size |
 |---:|---:|---:|---:|---:|---:|---:|---:|

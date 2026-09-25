@@ -108,12 +108,12 @@ tasks:
   # ===========================================================================
 
   bench:
-    desc: "Measure build, proof and verify times (other sizes: task bench SIZES=1000,10000)"
+    desc: "Measure build, proof and verify times (task bench SIZES=1000,10000; task bench -- --markdown for the README table)"
     env:
       MIX_ENV: prod
     cmds:
       # SIZES reaches the script only when given, so the script keeps its defaults.
-      - "{{if .SIZES}}SIZES={{.SIZES}} {{end}}mix run bench/performance.exs"
+      - "{{if .SIZES}}SIZES={{.SIZES}} {{end}}mix run bench/performance.exs {{.CLI_ARGS}}"
 
   example:
     desc: "Run examples/usage.exs: build a tree, prove an entry, verify it, store it"
