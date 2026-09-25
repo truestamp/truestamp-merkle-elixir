@@ -20,7 +20,8 @@ defmodule Truestamp.Merkle do
   (RFC 9162, section 2.1.1): no padding, no filler leaves. Entries are sorted byte-wise by
   key first, so the same set of entries always gives the same root, whatever order they
   arrive in. The README states the contract a port must reproduce,
-  `vectors/merkle.json` holds its known answers, and `vectors/interop/` holds the known
+  `vectors/merkle.json` holds its known answers, and
+  [`vectors/interop/`](https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop) holds the known
   answers of six Go implementations and of production logs, which the tests also hold the
   library to.
 
@@ -55,13 +56,13 @@ defmodule Truestamp.Merkle do
   - **One encoding per proof**: the binary form has fixed-width fields and a path length
     the index and size determine.
 
-  What a proof does and does not attest is in `SECURITY.md`. Keys are not bound into a
+  What a proof does and does not attest is in [SECURITY.md](SECURITY.md). Keys are not bound into a
   proof: bind an identifier into the digest itself if you need that.
 
   Size a large workload by memory before time: a finished tree holds a few hundred bytes
   of heap per entry, and building one needs more while the input and the tree are both
   alive. The README's Performance section has measured figures, and
-  `bench/performance.exs` reproduces them on your hardware.
+  [`bench/performance.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs) reproduces them on your hardware.
 
   ## Quick Start
 

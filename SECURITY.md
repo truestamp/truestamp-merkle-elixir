@@ -134,7 +134,7 @@ inconvenient.
 None of this is homegrown. The tree shape, the audit path and the verification loop are
 RFC 9162 section 2.1's, so any implementation of that RFC or of RFC 6962 reproduces the
 roots and accepts the proofs; the tests hold the library to the published known answers of
-six Go implementations and to proofs from production logs (`vectors/interop/`). The only
+six Go implementations and to proofs from production logs ([`vectors/interop/`](https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop)). The only
 thing this library adds is the order: entries are sorted by key before the digests become
 the RFC's leaf data.
 

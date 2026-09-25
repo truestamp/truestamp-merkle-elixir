@@ -37,7 +37,7 @@ Until it is on Hex, depend on it by commit:
 {:truestamp_merkle, github: "truestamp/truestamp-merkle-elixir", ref: "<full commit id>"}
 ```
 
-The module documentation covers every function, and `SECURITY.md` what a proof does and
+The module documentation covers every function, and [SECURITY.md](SECURITY.md) what a proof does and
 does not attest.
 
 ## The tree contract
@@ -223,13 +223,13 @@ the tessera and serverless-log test log, and ics23's test vectors. That is 330 t
 reject, and cases computed with each implementation's own functions from its tests' data
 (named `generated:` in the files). The tests hold this library to every root and verdict in
 them, at the leaf-hash level, and to the RFC 9162 verdict where an implementation departs
-from it. `vectors/interop/README.md` lists every source, and
+from it. [`vectors/interop/README.md`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/vectors/interop/README.md) lists every source, and
 `mix test --include go_interop` also runs each implementation over the files and over this
 library's own vectors.
 
 ## Performance
 
-Measured with `mix run bench/performance.exs` (in the `prod` environment) on an Apple M3 Max
+Measured with [`bench/performance.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/performance.exs) (`task bench`, in the `prod` environment) on an Apple M3 Max
 with 64 GB, running Elixir 1.20.1 on OTP 29. A tree is built by one process; the build time
 is the median of three builds, and the proof and verify times are means over up to 10,000
 random entries.
@@ -254,7 +254,7 @@ random entries.
   size a large workload by memory before time.
 - Timings vary between runs by a few percent, and by more on a busy machine.
 
-`mix run bench/proof_generation_benchmark.exs` times proof generation in bulk.
+[`bench/proof_generation_benchmark.exs`](https://github.com/truestamp/truestamp-merkle-elixir/blob/main/bench/proof_generation_benchmark.exs) times proof generation in bulk.
 
 ## Development
 
@@ -275,6 +275,6 @@ instead of rewritten.
 
 ## License
 
-Apache License 2.0. See [LICENSE](./LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
 
 Copyright (c) 2025-2026 Truestamp, Inc.
