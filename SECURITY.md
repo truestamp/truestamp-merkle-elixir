@@ -176,7 +176,7 @@ Whether this matters is a question about your data, not about the tree. A digest
 the hash of guessable content is exposed to that confirmation wherever it appears, in a
 proof or not; one that is a composite including something unpredictable is not.
 Truestamp's leaf values are composites of that kind (an item's leaf value includes its
-ULID, which has random bits, and its entropy witnesses), and Truestamp shows each block's
+id, which has random bits, and its entropy witnesses), and Truestamp shows each block's
 counts of items and entropy observations, whose sum is its leaf count, on its explorer
 anyway, so there a proof discloses what the front end states outright.
 
