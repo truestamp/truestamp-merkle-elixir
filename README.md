@@ -272,7 +272,8 @@ three builds, and the proof and verify times are means over up to 10,000 random 
     task bench       measure the performance table
 
 `task` lists the rest. CI runs `task ci`, the precommit gates with formatting checked
-instead of rewritten, on OTP 27, 28 and 29.
+instead of rewritten, on Elixir 1.20.1 with OTP 27, 28 and 29, and on Elixir 1.19.3, the
+oldest Elixir it tests, with OTP 28.1.1. `mix.exs` asks for Elixir 1.19 or later.
 
 ## License
 

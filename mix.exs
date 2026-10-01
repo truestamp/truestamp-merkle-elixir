@@ -11,8 +11,9 @@ defmodule Truestamp.Merkle.MixProject do
     [
       app: :truestamp_merkle,
       version: @version,
-      # The Elixir CI tests (on OTP 27, 28 and 29); see SECURITY.md, Platform requirements.
-      elixir: "~> 1.20",
+      # 1.19 or later. 1.19.3 (on OTP 28.1.1) is the oldest version CI tests, beside 1.20.1
+      # on OTP 27, 28 and 29; see SECURITY.md, Platform requirements.
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),

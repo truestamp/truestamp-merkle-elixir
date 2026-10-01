@@ -10,7 +10,7 @@ defmodule Truestamp.Merkle do
   9162's Merkle Tree Hash; `proof/2` gives an entry's inclusion proof, and `walk/3` and
   `verify/4` check one. What a key identifies, and what the digest was taken over, are
   yours to decide. Pure Elixir with no dependencies beyond `:crypto` and `Base`; it
-  requires Elixir 1.20, and so OTP 27 or newer.
+  requires Elixir 1.19 or later, and so OTP 26 or newer.
 
   ## The tree
 

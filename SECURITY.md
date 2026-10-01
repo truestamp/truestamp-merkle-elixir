@@ -227,9 +227,11 @@ a defense, and it should not appear in a security summary as though it were one.
 
 ## Platform requirements
 
-Elixir 1.20, and so OTP 27 or newer. CI runs every gate on OTP 27, 28 and 29, with Elixir
-1.20. The code may well run on earlier Elixir releases, but 1.20 is what CI tests, so it
-is what `mix.exs` requires. Beyond that the module depends only on `:crypto`, `Base`,
-`Bitwise`, and the standard library.
+Elixir 1.19 or later, and so OTP 26 or newer. CI runs every gate on Elixir 1.19.3 with
+OTP 28.1.1 and on Elixir 1.20.1 with OTP 27, 28 and 29, so 1.19.3 is the oldest version
+tested. `mix.exs` also allows Elixir 1.19.0 to 1.19.2, and Elixir 1.19 on OTP 26 or 27,
+none of which CI runs. The code may well run on earlier Elixir releases, but 1.19 is the
+oldest minor release CI tests, so it is what `mix.exs` requires. Beyond that the
+module depends only on `:crypto`, `Base`, `Bitwise`, and the standard library.
 
 [interop]: https://github.com/truestamp/truestamp-merkle-elixir/tree/main/vectors/interop

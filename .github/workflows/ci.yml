@@ -13,13 +13,17 @@ permissions:
 
 jobs:
   test:
-    name: Test (OTP ${{ matrix.otp }})
+    # The Elixir 1.19.3 leg names itself, since it shares OTP 28 with a 1.20.1 leg.
+    name: ${{ matrix.name || format('Test (OTP {0})', matrix.otp) }}
     # Pinned: mise finds prebuilt Erlang for Ubuntu 20.04, 22.04 and 24.04, and
     # ubuntu-latest moves to a release it does not map.
     runs-on: ubuntu-24.04
 
-    # Every gate on the last several OTP releases: the versions pinned in .tool-versions,
-    # and each earlier OTP that Elixir 1.20 supports, with Elixir 1.20.1 built for it.
+    # Every gate on each leg: the versions pinned in .tool-versions (Elixir 1.20.1 on OTP
+    # 29); Elixir 1.20.1 built for each earlier OTP that Elixir 1.20 supports (28 and 27);
+    # and Elixir 1.19.3 on OTP 28.1.1, since mix.exs allows Elixir 1.19 or later and 1.19.3
+    # is the oldest version CI tests. Each pinned Erlang and Elixir is prebuilt on
+    # builds.hex.pm for Ubuntu 24.04.
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +35,10 @@ jobs:
           - otp: "27"
             erlang: 27.3.4.18
             elixir: 1.20.1-otp-27
+          - otp: "28"
+            erlang: 28.1.1
+            elixir: 1.19.3-otp-28
+            name: Test (OTP 28, Elixir 1.19.3)
 
     env:
       MIX_ENV: test
@@ -40,7 +48,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Use this leg's Erlang and Elixir
         # mise takes MISE_<TOOL>_VERSION over .tool-versions.
@@ -52,18 +60,31 @@ jobs:
       - name: Install Erlang, Elixir, Go and Task via mise
         # Versions come from .tool-versions, less any the step above overrides. Go runs
         # the interop programs in interop/go/.
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           version: 2026.9.13
-          cache_key_prefix: mise-prebuilt-otp${{ matrix.otp }}-${{ matrix.erlang }}
+          # mise-action's cache key does not see the step above, so its prefix names the
+          # leg's versions.
+          cache_key_prefix: mise-prebuilt-otp${{ matrix.otp }}-${{ matrix.erlang }}-${{ matrix.elixir }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Check the OTP release
+        # On a pinned leg, the exact Erlang and Elixir too, so the two OTP 28 legs cannot
+        # pass on each other's tools.
         run: |
           otp=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().')
-          echo "OTP $otp; $(elixir --version | tail -1)"
+          root=$(erl -noshell -eval 'io:format("~s", [code:root_dir()]), halt().')
+          erlang=$(cat "$root/releases/$otp/OTP_VERSION")
+          elixir=$(elixir --version | tail -1)
+          echo "Erlang/OTP $erlang; $elixir"
           test "$otp" = "${{ matrix.otp }}"
+          want_erlang="${{ matrix.erlang }}"
+          want_elixir="${{ matrix.elixir }}"
+          if [ -n "$want_erlang" ]; then
+            test "$erlang" = "$want_erlang"
+            test "$elixir" = "Elixir ${want_elixir%-otp-*} (compiled with Erlang/OTP ${want_elixir##*-otp-})"
+          fi
 
       - name: Restore deps cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
